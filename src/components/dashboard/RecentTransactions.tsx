@@ -1,11 +1,13 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import BlurredCard from '../shared/BlurredCard';
 import CategoryIcon, { CategoryType } from '../shared/CategoryIcon';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/context/AuthProvider';
 
 export interface Transaction {
   id: string;
@@ -17,14 +19,78 @@ export interface Transaction {
 }
 
 interface RecentTransactionsProps {
-  transactions: Transaction[];
+  transactions?: Transaction[];
   isLoading?: boolean;
 }
 
 const RecentTransactions: React.FC<RecentTransactionsProps> = ({
-  transactions,
-  isLoading = false,
+  transactions: propTransactions,
+  isLoading: propIsLoading = false,
 }) => {
+  const [transactions, setTransactions] = useState<Transaction[]>(propTransactions || []);
+  const [isLoading, setIsLoading] = useState(propIsLoading);
+  const { user, setupSubscription } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      const fetchRecentTransactions = async () => {
+        setIsLoading(true);
+        try {
+          const { data, error } = await supabase
+            .from('transactions')
+            .select('*')
+            .order('date', { ascending: false })
+            .limit(5);
+
+          if (error) {
+            throw error;
+          }
+
+          if (data) {
+            const formattedTransactions: Transaction[] = data.map(item => ({
+              id: item.id,
+              date: new Date(item.date),
+              description: item.description,
+              amount: Number(item.amount),
+              type: item.type as 'income' | 'expense',
+              category: (item.category_id || 'other') as CategoryType,
+            }));
+            
+            setTransactions(formattedTransactions);
+          }
+        } catch (error) {
+          console.error('Error fetching recent transactions:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      fetchRecentTransactions();
+
+      // Set up real-time subscription for transactions
+      const cleanup = setupSubscription<any>(
+        'transactions',
+        'INSERT',
+        (payload) => {
+          const newTransaction = payload.new;
+          setTransactions(current => {
+            const transaction: Transaction = {
+              id: newTransaction.id,
+              date: new Date(newTransaction.date),
+              description: newTransaction.description,
+              amount: Number(newTransaction.amount),
+              type: newTransaction.type as 'income' | 'expense',
+              category: (newTransaction.category_id || 'other') as CategoryType,
+            };
+            return [transaction, ...current.slice(0, 4)]; // Keep only the latest 5 transactions
+          });
+        }
+      );
+
+      return cleanup;
+    }
+  }, [user, setupSubscription]);
+
   return (
     <BlurredCard className="min-h-[400px]">
       <div className="flex justify-between items-center mb-6">
@@ -34,9 +100,11 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
             View all
           </Link>
         </Button>
-        <Button size="sm" className="ml-2">
-          <Plus className="h-4 w-4 mr-1" />
-          Add new
+        <Button size="sm" className="ml-2" asChild>
+          <Link to="/transactions">
+            <Plus className="h-4 w-4 mr-1" />
+            Add new
+          </Link>
         </Button>
       </div>
       

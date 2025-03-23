@@ -52,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     event: 'INSERT' | 'UPDATE' | 'DELETE', 
     callback: (payload: { new: T }) => void
   ) => {
-    // Fix: Use the correct type for the channel subscription
+    // Fix: Use the correct channel configuration
     const channel = supabase
       .channel('db-changes')
       .on(
@@ -62,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           schema: 'public',
           table,
         },
-        callback
+        (payload) => callback(payload as any)
       )
       .subscribe();
 

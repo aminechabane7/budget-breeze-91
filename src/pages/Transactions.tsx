@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Plus, Search, Filter, ArrowUpDown, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +10,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -26,6 +24,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import BlurredCard from '@/components/shared/BlurredCard';
 import CategoryIcon, { CategoryType } from '@/components/shared/CategoryIcon';
 import { Transaction } from '@/components/dashboard/RecentTransactions';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/context/AuthProvider';
 
 const categoryOptions: { value: CategoryType; label: string }[] = [
   { value: 'groceries', label: 'Groceries' },
@@ -60,101 +60,73 @@ const Transactions = () => {
     date: format(new Date(), 'yyyy-MM-dd'),
   });
   const { toast } = useToast();
+  const { user, setupSubscription } = useAuth();
+
+  const fetchTransactions = async () => {
+    setIsLoading(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        const formattedTransactions: Transaction[] = data.map((item) => ({
+          id: item.id,
+          date: new Date(item.date),
+          description: item.description,
+          amount: Number(item.amount),
+          type: item.type as 'income' | 'expense',
+          category: (item.category_id || 'other') as CategoryType,
+        }));
+        
+        setTransactions(formattedTransactions);
+        setFilteredTransactions(formattedTransactions);
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      toast({
+        title: 'Failed to load transactions',
+        description: 'Please try again later',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Simulate loading data from API
-    setTimeout(() => {
-      // Sample data - more transactions
-      const mockTransactions: Transaction[] = [
-        {
-          id: '1',
-          date: new Date(2023, 8, 28),
-          description: 'Monthly Salary',
-          amount: 3500,
-          type: 'income',
-          category: 'salary',
-        },
-        {
-          id: '2',
-          date: new Date(2023, 8, 27),
-          description: 'Grocery Shopping',
-          amount: 120.45,
-          type: 'expense',
-          category: 'groceries',
-        },
-        {
-          id: '3',
-          date: new Date(2023, 8, 26),
-          description: 'Electricity Bill',
-          amount: 78.20,
-          type: 'expense',
-          category: 'utilities',
-        },
-        {
-          id: '4',
-          date: new Date(2023, 8, 25),
-          description: 'Dinner with Friends',
-          amount: 65.30,
-          type: 'expense',
-          category: 'dining',
-        },
-        {
-          id: '5',
-          date: new Date(2023, 8, 24),
-          description: 'Freelance Project',
-          amount: 750,
-          type: 'income',
-          category: 'income',
-        },
-        {
-          id: '6',
-          date: new Date(2023, 8, 23),
-          description: 'Internet Bill',
-          amount: 59.99,
-          type: 'expense',
-          category: 'utilities',
-        },
-        {
-          id: '7',
-          date: new Date(2023, 8, 22),
-          description: 'Movie Night',
-          amount: 32.50,
-          type: 'expense',
-          category: 'entertainment',
-        },
-        {
-          id: '8',
-          date: new Date(2023, 8, 21),
-          description: 'Gas',
-          amount: 45.70,
-          type: 'expense',
-          category: 'transportation',
-        },
-        {
-          id: '9',
-          date: new Date(2023, 8, 20),
-          description: 'Birthday Gift',
-          amount: 50,
-          type: 'expense',
-          category: 'gift',
-        },
-        {
-          id: '10',
-          date: new Date(2023, 8, 19),
-          description: 'Dentist',
-          amount: 150,
-          type: 'expense',
-          category: 'health',
-        },
-      ];
+    if (user) {
+      fetchTransactions();
       
-      setTransactions(mockTransactions);
-      setFilteredTransactions(mockTransactions);
-      setIsLoading(false);
-    }, 1000);
-  }, []);
+      const cleanup = setupSubscription<any>(
+        'transactions',
+        'INSERT',
+        (payload) => {
+          const newTransaction = payload.new;
+          setTransactions((current) => {
+            const transaction: Transaction = {
+              id: newTransaction.id,
+              date: new Date(newTransaction.date),
+              description: newTransaction.description,
+              amount: Number(newTransaction.amount),
+              type: newTransaction.type as 'income' | 'expense',
+              category: (newTransaction.category_id || 'other') as CategoryType,
+            };
+            return [transaction, ...current];
+          });
+        }
+      );
+      
+      return cleanup;
+    }
+  }, [user, setupSubscription]);
 
-  // Filter transactions when search query changes
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredTransactions(transactions);
@@ -167,8 +139,7 @@ const Transactions = () => {
     }
   }, [searchQuery, transactions]);
 
-  const handleAddTransaction = () => {
-    // Validate inputs
+  const handleAddTransaction = async () => {
     if (!newTransaction.description || !newTransaction.amount || !newTransaction.date) {
       toast({
         title: "Invalid input",
@@ -188,34 +159,43 @@ const Transactions = () => {
       return;
     }
     
-    // Create new transaction object
-    const transaction: Transaction = {
-      id: Date.now().toString(), // Use timestamp as ID
-      description: newTransaction.description,
-      amount: amount,
-      type: newTransaction.type as 'income' | 'expense',
-      category: newTransaction.category,
-      date: new Date(newTransaction.date),
-    };
-    
-    // Add to transactions list
-    setTransactions([transaction, ...transactions]);
-    setFilteredTransactions([transaction, ...filteredTransactions]);
-    
-    // Reset form and close dialog
-    setNewTransaction({
-      description: '',
-      amount: '',
-      type: 'expense',
-      category: 'other',
-      date: format(new Date(), 'yyyy-MM-dd'),
-    });
-    setIsAddDialogOpen(false);
-    
-    toast({
-      title: "Transaction added",
-      description: "Your transaction has been added successfully.",
-    });
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert({
+          description: newTransaction.description,
+          amount: amount,
+          type: newTransaction.type,
+          category_id: newTransaction.category,
+          date: newTransaction.date,
+          user_id: user?.id,
+        })
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      setNewTransaction({
+        description: '',
+        amount: '',
+        type: 'expense',
+        category: 'other',
+        date: format(new Date(), 'yyyy-MM-dd'),
+      });
+      setIsAddDialogOpen(false);
+      
+      toast({
+        title: "Transaction added",
+        description: "Your transaction has been added successfully.",
+      });
+    } catch (error: any) {
+      console.error('Error adding transaction:', error);
+      toast({
+        title: "Failed to add transaction",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEditTransaction = (transaction: Transaction) => {
@@ -235,19 +215,35 @@ const Transactions = () => {
     setIsDeleteDialogOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!currentTransaction) return;
     
-    const updatedTransactions = transactions.filter(t => t.id !== currentTransaction.id);
-    setTransactions(updatedTransactions);
-    setFilteredTransactions(updatedTransactions);
-    setIsDeleteDialogOpen(false);
-    setCurrentTransaction(null);
-    
-    toast({
-      title: "Transaction deleted",
-      description: "The transaction has been removed.",
-    });
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', currentTransaction.id);
+        
+      if (error) throw error;
+      
+      const updatedTransactions = transactions.filter(t => t.id !== currentTransaction.id);
+      setTransactions(updatedTransactions);
+      setFilteredTransactions(updatedTransactions);
+      setIsDeleteDialogOpen(false);
+      setCurrentTransaction(null);
+      
+      toast({
+        title: "Transaction deleted",
+        description: "The transaction has been removed.",
+      });
+    } catch (error: any) {
+      console.error('Error deleting transaction:', error);
+      toast({
+        title: "Failed to delete transaction",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -404,7 +400,6 @@ const Transactions = () => {
         )}
       </BlurredCard>
       
-      {/* Add/Edit Transaction Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -529,7 +524,6 @@ const Transactions = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
