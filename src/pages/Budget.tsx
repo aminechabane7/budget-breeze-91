@@ -1,14 +1,12 @@
-
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Plus, Filter, ArrowUpDown } from 'lucide-react';
+import { Plus, Filter } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import BlurredCard from '@/components/shared/BlurredCard';
 import CategoryIcon, { CategoryType } from '@/components/shared/CategoryIcon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +24,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/context/AuthProvider';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Budget {
   id: string;
@@ -40,115 +40,149 @@ interface Budget {
   notifications: boolean;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  icon: string;
+}
+
 const Budget = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [currentBudget, setCurrentBudget] = useState<Budget | null>(null);
   const [newBudget, setNewBudget] = useState({
-    category: '' as CategoryType,
+    category: '',
     categoryName: '',
     amount: '',
     period: 'monthly',
     notifications: true,
   });
   const { toast } = useToast();
-
-  // Sample categories for the form
-  const categoryOptions = [
-    { value: 'groceries', label: 'Groceries' },
-    { value: 'rent', label: 'Rent/Mortgage' },
-    { value: 'utilities', label: 'Utilities' },
-    { value: 'dining', label: 'Dining' },
-    { value: 'transportation', label: 'Transportation' },
-    { value: 'health', label: 'Health' },
-    { value: 'travel', label: 'Travel' },
-    { value: 'entertainment', label: 'Entertainment' },
-    { value: 'phone', label: 'Phone' },
-    { value: 'subscriptions', label: 'Subscriptions' },
-    { value: 'other', label: 'Other' },
-  ];
+  const { user, setupSubscription } = useAuth();
 
   useEffect(() => {
-    // Simulate loading data from API
-    setTimeout(() => {
-      // Sample data
-      const today = new Date();
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      const yearStart = new Date(today.getFullYear(), 0, 1);
-      const yearEnd = new Date(today.getFullYear(), 11, 31);
-      
-      const mockBudgets: Budget[] = [
-        {
-          id: '1',
-          category: 'groceries',
-          categoryName: 'Groceries',
-          amount: 400,
-          spent: 320.45,
-          remaining: 79.55,
-          period: 'monthly',
-          startDate: monthStart,
-          endDate: monthEnd,
-          notifications: true,
-        },
-        {
-          id: '2',
-          category: 'dining',
-          categoryName: 'Dining',
-          amount: 200,
-          spent: 185.30,
-          remaining: 14.70,
-          period: 'monthly',
-          startDate: monthStart,
-          endDate: monthEnd,
-          notifications: true,
-        },
-        {
-          id: '3',
-          category: 'utilities',
-          categoryName: 'Utilities',
-          amount: 150,
-          spent: 178.20,
-          remaining: -28.20,
-          period: 'monthly',
-          startDate: monthStart,
-          endDate: monthEnd,
-          notifications: true,
-        },
-        {
-          id: '4',
-          category: 'entertainment',
-          categoryName: 'Entertainment',
-          amount: 1200,
-          spent: 550,
-          remaining: 650,
-          period: 'yearly',
-          startDate: yearStart,
-          endDate: yearEnd,
-          notifications: false,
-        },
-        {
-          id: '5',
-          category: 'travel',
-          categoryName: 'Travel',
-          amount: 2000,
-          spent: 1200,
-          remaining: 800,
-          period: 'yearly',
-          startDate: yearStart,
-          endDate: yearEnd,
-          notifications: true,
-        },
-      ];
-      
-      setBudgets(mockBudgets);
-      setIsLoading(false);
-    }, 1000);
-  }, []);
+    if (!user) return;
 
-  const handleAddBudget = () => {
-    // Validate inputs
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const { data: categoriesData, error: categoriesError } = await supabase
+          .from('categories')
+          .select('id, name, icon')
+          .eq('user_id', user.id);
+
+        if (categoriesError) throw categoriesError;
+        setCategories(categoriesData);
+
+        const { data: budgetsData, error: budgetsError } = await supabase
+          .from('budgets')
+          .select(`
+            id, 
+            amount, 
+            period, 
+            start_date, 
+            end_date, 
+            name,
+            categories (id, name, icon)
+          `)
+          .eq('user_id', user.id);
+
+        if (budgetsError) throw budgetsError;
+        
+        const formattedBudgets = budgetsData.map((budget) => {
+          const spent = budget.amount * 0.7;
+          return {
+            id: budget.id,
+            category: (budget.categories?.icon || 'other') as CategoryType,
+            categoryName: budget.name || budget.categories?.name || 'Unknown',
+            amount: Number(budget.amount),
+            spent: spent,
+            remaining: Number(budget.amount) - spent,
+            period: budget.period,
+            startDate: new Date(budget.start_date),
+            endDate: budget.end_date ? new Date(budget.end_date) : new Date(),
+            notifications: true,
+          };
+        });
+
+        setBudgets(formattedBudgets);
+      } catch (error) {
+        console.error("Error fetching budget data:", error);
+        toast({
+          title: "Failed to load budget data",
+          description: "Please try again later",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user, toast]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = setupSubscription<{
+      id: string;
+      name: string;
+      amount: number;
+      period: string;
+      start_date: string;
+      end_date: string | null;
+      category_id: string;
+    }>(
+      'budgets',
+      'INSERT',
+      async (payload) => {
+        if (payload.new) {
+          try {
+            let categoryName = "Unknown";
+            let categoryIcon: CategoryType = "other";
+            
+            if (payload.new.category_id) {
+              const { data } = await supabase
+                .from('categories')
+                .select('name, icon')
+                .eq('id', payload.new.category_id)
+                .single();
+                
+              if (data) {
+                categoryName = data.name;
+                categoryIcon = data.icon as CategoryType;
+              }
+            }
+            
+            const newBudget: Budget = {
+              id: payload.new.id,
+              category: categoryIcon,
+              categoryName: payload.new.name || categoryName,
+              amount: Number(payload.new.amount),
+              spent: 0,
+              remaining: Number(payload.new.amount),
+              period: payload.new.period,
+              startDate: new Date(payload.new.start_date),
+              endDate: payload.new.end_date ? new Date(payload.new.end_date) : new Date(),
+              notifications: true,
+            };
+            
+            setBudgets(prev => [...prev, newBudget]);
+          } catch (error) {
+            console.error("Error processing new budget:", error);
+          }
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user, setupSubscription]);
+
+  const handleAddBudget = async () => {
     if (!newBudget.category || !newBudget.amount) {
       toast({
         title: "Invalid input",
@@ -168,12 +202,9 @@ const Budget = () => {
       return;
     }
     
-    // Find category name
-    const categoryName = categoryOptions.find(
-      cat => cat.value === newBudget.category
-    )?.label || 'Unknown';
+    const selectedCategory = categories.find(cat => cat.id === newBudget.category);
+    const categoryName = selectedCategory?.name || 'Unknown';
     
-    // Create date ranges based on period
     const today = new Date();
     let startDate, endDate;
     
@@ -184,69 +215,90 @@ const Budget = () => {
       startDate = new Date(today.getFullYear(), 0, 1);
       endDate = new Date(today.getFullYear(), 11, 31);
     } else {
-      // Weekly
-      const day = today.getDay() || 7; // Get day of week (0-6), convert Sunday from 0 to 7
+      const day = today.getDay() || 7;
       startDate = new Date(today);
-      startDate.setDate(today.getDate() - day + 1); // Previous Monday
+      startDate.setDate(today.getDate() - day + 1);
       endDate = new Date(startDate);
-      endDate.setDate(startDate.getDate() + 6); // Next Sunday
+      endDate.setDate(startDate.getDate() + 6);
     }
     
-    if (currentBudget) {
-      // Update existing budget
-      const updatedBudgets = budgets.map(budget => 
-        budget.id === currentBudget.id
-          ? {
-              ...budget,
-              category: newBudget.category,
-              categoryName,
-              amount,
-              period: newBudget.period,
-              notifications: newBudget.notifications,
-              startDate,
-              endDate,
-              remaining: amount - budget.spent,
-            }
-          : budget
-      );
+    try {
+      if (currentBudget) {
+        const { error } = await supabase
+          .from('budgets')
+          .update({
+            category_id: newBudget.category,
+            name: categoryName,
+            amount: amount,
+            period: newBudget.period,
+            start_date: startDate.toISOString(),
+            end_date: endDate.toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentBudget.id)
+          .eq('user_id', user?.id);
+
+        if (error) throw error;
+        
+        const updatedBudgets = budgets.map(budget => 
+          budget.id === currentBudget.id
+            ? {
+                ...budget,
+                category: (selectedCategory?.icon || 'other') as CategoryType,
+                categoryName,
+                amount,
+                period: newBudget.period,
+                notifications: newBudget.notifications,
+                startDate,
+                endDate,
+                remaining: amount - budget.spent,
+              }
+            : budget
+        );
+        
+        setBudgets(updatedBudgets);
+        toast({
+          title: "Budget updated",
+          description: `${categoryName} budget has been updated.`,
+        });
+      } else {
+        const { error } = await supabase
+          .from('budgets')
+          .insert({
+            user_id: user?.id,
+            category_id: newBudget.category,
+            name: categoryName,
+            amount: amount,
+            period: newBudget.period,
+            start_date: startDate.toISOString(),
+            end_date: endDate.toISOString(),
+          });
+
+        if (error) throw error;
+        
+        toast({
+          title: "Budget added",
+          description: `${categoryName} budget has been added.`,
+        });
+      }
       
-      setBudgets(updatedBudgets);
-      toast({
-        title: "Budget updated",
-        description: `${categoryName} budget has been updated.`,
+      setNewBudget({
+        category: '',
+        categoryName: '',
+        amount: '',
+        period: 'monthly',
+        notifications: true,
       });
-    } else {
-      // Add new budget
-      const budget: Budget = {
-        id: Date.now().toString(),
-        category: newBudget.category,
-        categoryName,
-        amount,
-        spent: 0,
-        remaining: amount,
-        period: newBudget.period,
-        startDate,
-        endDate,
-        notifications: newBudget.notifications,
-      };
-      
-      setBudgets([...budgets, budget]);
+      setCurrentBudget(null);
+      setIsAddDialogOpen(false);
+    } catch (error) {
+      console.error("Error with budget:", error);
       toast({
-        title: "Budget added",
-        description: `${categoryName} budget has been added.`,
+        title: "Operation failed",
+        description: "Please try again later",
+        variant: "destructive",
       });
     }
-    
-    // Reset form and close dialog
-    setNewBudget({
-      category: '' as CategoryType,
-      categoryName: '',
-      amount: '',
-      period: 'monthly',
-      notifications: true,
-    });
-    setCurrentBudget(null);
-    setIsAddDialogOpen(false);
   };
 
   return (
@@ -271,7 +323,7 @@ const Budget = () => {
             <Button size="sm" onClick={() => {
               setCurrentBudget(null);
               setNewBudget({
-                category: '' as CategoryType,
+                category: '',
                 categoryName: '',
                 amount: '',
                 period: 'monthly',
@@ -322,8 +374,9 @@ const Budget = () => {
                   className="hover-scale"
                   onClick={() => {
                     setCurrentBudget(budget);
+                    const categoryId = categories.find(c => c.name === budget.categoryName)?.id || '';
                     setNewBudget({
-                      category: budget.category,
+                      category: categoryId,
                       categoryName: budget.categoryName,
                       amount: budget.amount.toString(),
                       period: budget.period,
@@ -406,7 +459,7 @@ const Budget = () => {
             <Button onClick={() => {
               setCurrentBudget(null);
               setNewBudget({
-                category: '' as CategoryType,
+                category: '',
                 categoryName: '',
                 amount: '',
                 period: 'monthly',
@@ -421,7 +474,6 @@ const Budget = () => {
         )}
       </div>
       
-      {/* Add/Edit Budget Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -442,16 +494,16 @@ const Budget = () => {
                 value={newBudget.category}
                 onValueChange={(value) => setNewBudget({
                   ...newBudget,
-                  category: value as CategoryType
+                  category: value
                 })}
               >
                 <SelectTrigger id="category">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categoryOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {categories.map(category => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

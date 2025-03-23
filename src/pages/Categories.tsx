@@ -17,6 +17,8 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Plus, Edit, ChevronDown, ChevronUp } from 'lucide-react';
+import { useAuth } from '@/context/AuthProvider';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Category {
   id: string;
@@ -26,73 +28,6 @@ interface Category {
   spent: number;
   transactions: number;
 }
-
-const defaultCategories: Category[] = [
-  {
-    id: '1',
-    name: 'Groceries',
-    type: 'groceries',
-    budget: 400,
-    spent: 320.45,
-    transactions: 8,
-  },
-  {
-    id: '2',
-    name: 'Rent',
-    type: 'rent',
-    budget: 1200,
-    spent: 1200,
-    transactions: 1,
-  },
-  {
-    id: '3',
-    name: 'Utilities',
-    type: 'utilities',
-    budget: 150,
-    spent: 138.19,
-    transactions: 3,
-  },
-  {
-    id: '4',
-    name: 'Dining',
-    type: 'dining',
-    budget: 200,
-    spent: 185.30,
-    transactions: 5,
-  },
-  {
-    id: '5',
-    name: 'Transportation',
-    type: 'transportation',
-    budget: 100,
-    spent: 45.70,
-    transactions: 2,
-  },
-  {
-    id: '6',
-    name: 'Salary',
-    type: 'salary',
-    budget: 0,
-    spent: 0,
-    transactions: 1,
-  },
-  {
-    id: '7',
-    name: 'Entertainment',
-    type: 'entertainment',
-    budget: 150,
-    spent: 32.50,
-    transactions: 1,
-  },
-  {
-    id: '8',
-    name: 'Health',
-    type: 'health',
-    budget: 200,
-    spent: 150,
-    transactions: 1,
-  },
-];
 
 const Categories = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -109,14 +44,81 @@ const Categories = () => {
     direction: 'ascending' | 'descending';
   } | null>(null);
   const { toast } = useToast();
+  const { user, setupSubscription } = useAuth();
 
+  // Load categories
   useEffect(() => {
-    // Simulate loading data from API
-    setTimeout(() => {
-      setCategories(defaultCategories);
-      setIsLoading(false);
-    }, 1000);
-  }, []);
+    if (!user) return;
+
+    const fetchCategories = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch categories from Supabase
+        const { data, error } = await supabase
+          .from('categories')
+          .select('*')
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        // Transform the data to match our component's expected format
+        const formattedCategories = data.map(category => ({
+          id: category.id,
+          name: category.name,
+          type: category.icon as CategoryType || 'other',
+          budget: 0, // Would be calculated from budgets table
+          spent: 0, // Would be calculated from transactions
+          transactions: 0, // Would be counted from transactions
+        }));
+
+        setCategories(formattedCategories);
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+        toast({
+          title: "Failed to load categories",
+          description: "Please try again later",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCategories();
+  }, [user, toast]);
+
+  // Set up real-time subscription for categories
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = setupSubscription<{
+      id: string;
+      name: string;
+      icon: string;
+      type: string;
+    }>(
+      'categories',
+      'INSERT',
+      (payload) => {
+        if (payload.new) {
+          const newCategory = {
+            id: payload.new.id,
+            name: payload.new.name,
+            type: payload.new.icon as CategoryType || 'other',
+            budget: 0,
+            spent: 0,
+            transactions: 0,
+          };
+
+          setCategories(prev => [...prev, newCategory]);
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user, setupSubscription]);
 
   const handleSort = (key: keyof Category) => {
     let direction: 'ascending' | 'descending' = 'ascending';
@@ -156,7 +158,7 @@ const Categories = () => {
     setIsDialogOpen(true);
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     // Validate inputs
     if (!newCategory.name) {
       toast({
@@ -176,50 +178,75 @@ const Categories = () => {
       return;
     }
     
-    if (editingCategory) {
-      // Update existing category
-      const updatedCategories = categories.map(category => 
-        category.id === editingCategory.id
-          ? {
-              ...category,
-              name: newCategory.name,
-              type: newCategory.type,
-              budget: newCategory.budget ? parseFloat(newCategory.budget) : 0,
-            }
-          : category
-      );
+    try {
+      if (editingCategory) {
+        // Update existing category in Supabase
+        const { error } = await supabase
+          .from('categories')
+          .update({
+            name: newCategory.name,
+            icon: newCategory.type,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingCategory.id)
+          .eq('user_id', user?.id);
+
+        if (error) throw error;
+        
+        // Update the categories state
+        setCategories(prev => 
+          prev.map(category => 
+            category.id === editingCategory.id
+              ? {
+                  ...category,
+                  name: newCategory.name,
+                  type: newCategory.type,
+                  budget: newCategory.budget ? parseFloat(newCategory.budget) : 0,
+                }
+              : category
+          )
+        );
+        
+        toast({
+          title: "Category updated",
+          description: `${newCategory.name} has been updated.`,
+        });
+      } else {
+        // Add new category to Supabase
+        const { error } = await supabase
+          .from('categories')
+          .insert({
+            name: newCategory.name,
+            icon: newCategory.type,
+            type: 'expense', // Default to expense, could be made selectable
+            user_id: user?.id,
+            color: '#' + Math.floor(Math.random()*16777215).toString(16), // Random color
+          });
+
+        if (error) throw error;
+        
+        toast({
+          title: "Category added",
+          description: `${newCategory.name} has been added.`,
+        });
+      }
       
-      setCategories(updatedCategories);
-      toast({
-        title: "Category updated",
-        description: `${newCategory.name} has been updated.`,
+      // Reset form and close dialog
+      setNewCategory({
+        name: '',
+        type: 'other',
+        budget: '',
       });
-    } else {
-      // Add new category
-      const newCategoryObject: Category = {
-        id: Date.now().toString(),
-        name: newCategory.name,
-        type: newCategory.type,
-        budget: newCategory.budget ? parseFloat(newCategory.budget) : 0,
-        spent: 0,
-        transactions: 0,
-      };
-      
-      setCategories([...categories, newCategoryObject]);
+      setEditingCategory(null);
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error("Error with category:", error);
       toast({
-        title: "Category added",
-        description: `${newCategory.name} has been added.`,
+        title: "Operation failed",
+        description: "Please try again later",
+        variant: "destructive",
       });
     }
-    
-    // Reset form and close dialog
-    setNewCategory({
-      name: '',
-      type: 'other',
-      budget: '',
-    });
-    setEditingCategory(null);
-    setIsDialogOpen(false);
   };
 
   const getSortIcon = (key: keyof Category) => {

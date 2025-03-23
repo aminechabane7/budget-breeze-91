@@ -8,6 +8,11 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  setupSubscription: <T>(
+    table: string, 
+    event: 'INSERT' | 'UPDATE' | 'DELETE', 
+    callback: (payload: { new: T }) => void
+  ) => (() => void);
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,8 +46,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
   };
 
+  // Create a reusable function to set up real-time subscriptions
+  const setupSubscription = <T,>(
+    table: string, 
+    event: 'INSERT' | 'UPDATE' | 'DELETE', 
+    callback: (payload: { new: T }) => void
+  ) => {
+    const channel = supabase
+      .channel('db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event,
+          schema: 'public',
+          table,
+        },
+        callback
+      )
+      .subscribe();
+
+    // Return a cleanup function
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, signOut }}>
+    <AuthContext.Provider value={{ 
+      session, 
+      user, 
+      loading, 
+      signOut, 
+      setupSubscription 
+    }}>
       {children}
     </AuthContext.Provider>
   );
