@@ -7,13 +7,15 @@ interface BlurredCardProps {
   className?: string;
   hoverEffect?: boolean;
   shimmer?: boolean;
+  onClick?: () => void;
 }
 
 const BlurredCard = ({ 
   children, 
   className, 
   hoverEffect = false,
-  shimmer = false
+  shimmer = false,
+  onClick
 }: BlurredCardProps) => {
   return (
     <div 
@@ -21,8 +23,10 @@ const BlurredCard = ({
         "rounded-xl p-6 glass-morphism transition-all duration-300",
         hoverEffect && "hover-scale hover:shadow-lg",
         shimmer && "shimmer",
+        onClick && "cursor-pointer",
         className
       )}
+      onClick={onClick}
     >
       {children}
     </div>
