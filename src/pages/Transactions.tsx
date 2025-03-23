@@ -59,8 +59,27 @@ const Transactions = () => {
     category: 'other' as CategoryType,
     date: format(new Date(), 'yyyy-MM-dd'),
   });
+  const [categories, setCategories] = useState<{id: string, name: string, icon: string}[]>([]);
   const { toast } = useToast();
   const { user, setupSubscription } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      const fetchCategories = async () => {
+        const { data, error } = await supabase
+          .from('categories')
+          .select('id, name, icon');
+          
+        if (error) {
+          console.error('Error fetching categories:', error);
+        } else if (data) {
+          setCategories(data);
+        }
+      };
+      
+      fetchCategories();
+    }
+  }, [user]);
 
   const fetchTransactions = async () => {
     setIsLoading(true);
@@ -139,6 +158,11 @@ const Transactions = () => {
     }
   }, [searchQuery, transactions]);
 
+  const getCategoryId = (categoryName: CategoryType): string | null => {
+    const category = categories.find(c => c.icon === categoryName);
+    return category ? category.id : null;
+  };
+
   const handleAddTransaction = async () => {
     if (!newTransaction.description || !newTransaction.amount || !newTransaction.date) {
       toast({
@@ -159,6 +183,8 @@ const Transactions = () => {
       return;
     }
     
+    const categoryId = getCategoryId(newTransaction.category);
+    
     try {
       const { data, error } = await supabase
         .from('transactions')
@@ -166,7 +192,7 @@ const Transactions = () => {
           description: newTransaction.description,
           amount: amount,
           type: newTransaction.type,
-          category_id: newTransaction.category,
+          category_id: categoryId,
           date: newTransaction.date,
           user_id: user?.id,
         })

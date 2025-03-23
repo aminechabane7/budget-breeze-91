@@ -47,14 +47,20 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
           }
 
           if (data) {
-            const formattedTransactions: Transaction[] = data.map(item => ({
-              id: item.id,
-              date: new Date(item.date),
-              description: item.description,
-              amount: Number(item.amount),
-              type: item.type as 'income' | 'expense',
-              category: (item.category_id || 'other') as CategoryType,
-            }));
+            const formattedTransactions: Transaction[] = data.map(item => {
+              // Get category from category_id, default to 'other' if not found
+              // In a real app, we would fetch the categories and map by ID
+              const categoryType = item.category_id ? (item.category_id as unknown as CategoryType) : 'other';
+              
+              return {
+                id: item.id,
+                date: new Date(item.date),
+                description: item.description,
+                amount: Number(item.amount),
+                type: item.type as 'income' | 'expense',
+                category: categoryType,
+              };
+            });
             
             setTransactions(formattedTransactions);
           }
@@ -74,13 +80,17 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
         (payload) => {
           const newTransaction = payload.new;
           setTransactions(current => {
+            const categoryType = newTransaction.category_id 
+              ? (newTransaction.category_id as unknown as CategoryType) 
+              : 'other';
+              
             const transaction: Transaction = {
               id: newTransaction.id,
               date: new Date(newTransaction.date),
               description: newTransaction.description,
               amount: Number(newTransaction.amount),
               type: newTransaction.type as 'income' | 'expense',
-              category: (newTransaction.category_id || 'other') as CategoryType,
+              category: categoryType,
             };
             return [transaction, ...current.slice(0, 4)]; // Keep only the latest 5 transactions
           });

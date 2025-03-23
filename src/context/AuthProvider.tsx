@@ -52,7 +52,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     event: 'INSERT' | 'UPDATE' | 'DELETE', 
     callback: (payload: { new: T }) => void
   ) => {
-    // Fix: Use the correct channel configuration
     const channel = supabase
       .channel('db-changes')
       .on(
