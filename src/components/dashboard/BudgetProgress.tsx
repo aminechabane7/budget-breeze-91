@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Alert, AlertCircle } from 'lucide-react';
+import { AlertTriangle, AlertCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import BlurredCard from '../shared/BlurredCard';
 import CategoryIcon, { CategoryType } from '../shared/CategoryIcon';
@@ -104,7 +104,7 @@ const BudgetProgress: React.FC<BudgetProgressProps> = ({
       ) : (
         <div className="text-center py-8">
           <div className="inline-flex items-center justify-center rounded-full bg-muted p-3 mb-4">
-            <Alert className="h-6 w-6 text-muted-foreground" />
+            <AlertTriangle className="h-6 w-6 text-muted-foreground" />
           </div>
           <h4 className="text-lg font-medium mb-2">No budgets set</h4>
           <p className="text-muted-foreground mb-4">
