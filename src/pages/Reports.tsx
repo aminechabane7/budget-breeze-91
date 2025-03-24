@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import BlurredCard from '@/components/shared/BlurredCard';
@@ -35,7 +34,7 @@ import { Button } from '@/components/ui/button';
 import { 
   Download, 
   FileSpreadsheet,
-  FilePdf 
+  FileText 
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -97,12 +96,10 @@ const Reports = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  // References for export
   const barChartRef = useRef<HTMLDivElement>(null);
   const pieChartRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
 
-  // Fetch categories
   useEffect(() => {
     if (user) {
       const fetchCategories = async () => {
@@ -126,7 +123,6 @@ const Reports = () => {
     }
   }, [user, toast]);
 
-  // Get category info
   const getCategoryInfo = (categoryId: string | null) => {
     if (!categoryId) return { name: "Other", icon: "other" as CategoryType, color: colorMap.other };
     const category = categories.find(c => c.id === categoryId);
@@ -137,7 +133,6 @@ const Reports = () => {
     };
   };
 
-  // Get date range based on timeframe
   const getDateRange = () => {
     const now = new Date();
     let fromDate: Date;
@@ -162,7 +157,6 @@ const Reports = () => {
     return format(fromDate, 'yyyy-MM-dd');
   };
 
-  // Load transactions based on timeframe
   useEffect(() => {
     if (!user || categories.length === 0) return;
 
@@ -170,10 +164,8 @@ const Reports = () => {
       setIsLoading(true);
       
       try {
-        // Define date range based on timeframe
         const formattedFromDate = getDateRange();
         
-        // Fetch transactions based on timeframe
         const { data, error } = await supabase
           .from('transactions')
           .select('*')
@@ -184,7 +176,6 @@ const Reports = () => {
         if (error) throw error;
         
         if (data) {
-          // Format transactions
           const formattedTransactions = data.map(item => {
             const categoryInfo = getCategoryInfo(item.category_id);
             return {
@@ -200,10 +191,8 @@ const Reports = () => {
           
           setTransactions(formattedTransactions);
           
-          // Calculate monthly data
           calculateMonthlyData(formattedTransactions);
           
-          // Calculate category data
           calculateCategoryData(formattedTransactions);
         }
       } catch (error) {
@@ -220,10 +209,8 @@ const Reports = () => {
     
     fetchTransactions();
   }, [user, timeFrame, categories, toast]);
-  
-  // Calculate monthly data for charts
+
   const calculateMonthlyData = (transactions: Transaction[]) => {
-    // Group transactions by month
     const months: Record<string, { income: number, expenses: number }> = {};
     
     transactions.forEach(transaction => {
@@ -240,7 +227,6 @@ const Reports = () => {
       }
     });
     
-    // Convert to array format for charts
     const monthlyDataArray = Object.keys(months).map(month => ({
       month,
       income: Number(months[month].income.toFixed(2)),
@@ -249,13 +235,10 @@ const Reports = () => {
     
     setMonthlyData(monthlyDataArray);
   };
-  
-  // Calculate category data for pie chart
+
   const calculateCategoryData = (transactions: Transaction[]) => {
-    // Get expense transactions
     const expenseTransactions = transactions.filter(t => t.type === 'expense');
     
-    // Group by category
     const categoryTotals: Record<string, number> = {};
     
     expenseTransactions.forEach(transaction => {
@@ -269,7 +252,6 @@ const Reports = () => {
       categoryTotals[categoryName] += transaction.amount;
     });
     
-    // Convert to array format for charts
     const categoryDataArray = Object.keys(categoryTotals).map(category => {
       const matchingCategory = categories.find(c => c.name === category);
       return {
@@ -287,7 +269,6 @@ const Reports = () => {
   };
 
   const handleExportExcel = () => {
-    // In a real implementation, this would generate and download an Excel file
     toast({
       title: "Excel Report Generated",
       description: "Your financial report has been exported to Excel (.xlsx)",
@@ -295,14 +276,12 @@ const Reports = () => {
   };
 
   const handleExportPDF = () => {
-    // In a real implementation, this would generate and download a PDF file
     toast({
       title: "PDF Report Generated",
       description: "Your financial report has been exported to PDF",
     });
   };
 
-  // Utility function to calculate totals
   const calculateTotals = () => {
     const totalIncome = monthlyData.reduce((sum, item) => sum + item.income, 0);
     const totalExpenses = monthlyData.reduce((sum, item) => sum + item.expenses, 0);
@@ -310,7 +289,6 @@ const Reports = () => {
     const avgMonthlyIncome = monthlyData.length > 0 ? totalIncome / monthlyData.length : 0;
     const avgMonthlyExpenses = monthlyData.length > 0 ? totalExpenses / monthlyData.length : 0;
     
-    // Find month with highest savings
     let highestSavingsMonth = monthlyData.length > 0 ? monthlyData[0].month : 'N/A';
     let highestSavings = monthlyData.length > 0 ? monthlyData[0].income - monthlyData[0].expenses : 0;
     
@@ -334,7 +312,6 @@ const Reports = () => {
 
   const totals = calculateTotals();
 
-  // Function to get the title based on timeFrame
   const getTimeFrameTitle = () => {
     switch (timeFrame) {
       case 'week': return 'This Week';
@@ -388,7 +365,7 @@ const Reports = () => {
                 Export to Excel (.xlsx)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleExportPDF}>
-                <FilePdf className="h-4 w-4 mr-2" />
+                <FileText className="h-4 w-4 mr-2" />
                 Export to PDF
               </DropdownMenuItem>
             </DropdownMenuContent>

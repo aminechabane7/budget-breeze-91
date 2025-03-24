@@ -57,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .channel('db-changes')
       .on(
         'postgres_changes', 
-        { event: event, schema: 'public', table: table },
+        { event, schema: 'public', table },
         (payload) => callback(payload as any)
       )
       .subscribe();
