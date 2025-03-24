@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Plus, Search, Filter, ArrowUpDown, Edit, Trash2 } from 'lucide-react';
@@ -81,6 +82,20 @@ const Transactions = () => {
     }
   }, [user]);
 
+  // Helper function to get category icon from category_id
+  const getCategoryIconFromId = (categoryId: string | null): CategoryType => {
+    if (!categoryId) return 'other';
+    const category = categories.find(c => c.id === categoryId);
+    return category ? (category.icon as CategoryType) : 'other';
+  };
+
+  // Helper function to get category name from category_id
+  const getCategoryNameFromId = (categoryId: string | null): string => {
+    if (!categoryId) return 'Other';
+    const category = categories.find(c => c.id === categoryId);
+    return category ? category.name : 'Other';
+  };
+
   const fetchTransactions = async () => {
     setIsLoading(true);
     
@@ -101,7 +116,8 @@ const Transactions = () => {
           description: item.description,
           amount: Number(item.amount),
           type: item.type as 'income' | 'expense',
-          category: (item.category_id || 'other') as CategoryType,
+          category: getCategoryIconFromId(item.category_id),
+          categoryId: item.category_id,
         }));
         
         setTransactions(formattedTransactions);
@@ -135,7 +151,8 @@ const Transactions = () => {
               description: newTransaction.description,
               amount: Number(newTransaction.amount),
               type: newTransaction.type as 'income' | 'expense',
-              category: (newTransaction.category_id || 'other') as CategoryType,
+              category: getCategoryIconFromId(newTransaction.category_id),
+              categoryId: newTransaction.category_id,
             };
             return [transaction, ...current];
           });
@@ -144,7 +161,7 @@ const Transactions = () => {
       
       return cleanup;
     }
-  }, [user, setupSubscription]);
+  }, [user, setupSubscription, categories]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -152,7 +169,7 @@ const Transactions = () => {
     } else {
       const filtered = transactions.filter(transaction => 
         transaction.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        transaction.category.toLowerCase().includes(searchQuery.toLowerCase())
+        getCategoryNameFromId(transaction.categoryId).toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredTransactions(filtered);
     }
@@ -364,7 +381,9 @@ const Transactions = () => {
                     <td className="py-3 px-4">
                       <div className="flex items-center">
                         <CategoryIcon category={transaction.category} size={14} />
-                        <span className="ml-2 text-sm capitalize">{transaction.category}</span>
+                        <span className="ml-2 text-sm capitalize">
+                          {getCategoryNameFromId(transaction.categoryId)}
+                        </span>
                       </div>
                     </td>
                     <td className={`py-3 px-4 text-right font-medium ${

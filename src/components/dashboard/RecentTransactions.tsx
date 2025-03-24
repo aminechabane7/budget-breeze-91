@@ -15,6 +15,7 @@ export interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   category: CategoryType;
+  categoryId?: string | null;
 }
 
 interface RecentTransactionsProps {
@@ -56,7 +57,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
   };
 
   useEffect(() => {
-    if (user) {
+    if (user && categories.length > 0) {
       const fetchRecentTransactions = async () => {
         setIsLoading(true);
         try {
@@ -79,6 +80,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
                 amount: Number(item.amount),
                 type: item.type as 'income' | 'expense',
                 category: getCategoryIcon(item.category_id),
+                categoryId: item.category_id,
               };
             });
             
@@ -106,6 +108,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
               amount: Number(newTransaction.amount),
               type: newTransaction.type as 'income' | 'expense',
               category: getCategoryIcon(newTransaction.category_id),
+              categoryId: newTransaction.category_id,
             };
             return [transaction, ...current.slice(0, 4)]; // Keep only the latest 5 transactions
           });

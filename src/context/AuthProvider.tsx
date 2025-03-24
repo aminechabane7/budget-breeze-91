@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const channel = supabase
       .channel('db-changes')
       .on(
-        'postgres_changes', // This is correct but needs to be used properly
+        'postgres_changes', 
         {
           event: event,
           schema: 'public',
