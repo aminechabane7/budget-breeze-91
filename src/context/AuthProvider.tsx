@@ -52,11 +52,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     event: 'INSERT' | 'UPDATE' | 'DELETE', 
     callback: (payload: { new: T }) => void
   ) => {
-    // Fixed type error by using the correct channel configuration
+    // Fix the channel configuration to use the correct syntax
     const channel = supabase
       .channel('db-changes')
       .on(
-        'postgres_changes',
+        'postgres_changes', // This is correct but needs to be used properly
         {
           event: event,
           schema: 'public',

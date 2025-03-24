@@ -84,7 +84,7 @@ const Dashboard = () => {
         // Calculate totals from all transactions (not just the 5 most recent)
         const { data: allTransactionsData } = await supabase
           .from('transactions')
-          .select('amount, type')
+          .select('amount, type, category_id')
           .eq('user_id', user.id);
           
         const calculatedIncome = allTransactionsData
