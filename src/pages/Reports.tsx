@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import BlurredCard from '@/components/shared/BlurredCard';
 import { CategoryType } from '@/components/shared/CategoryIcon';
@@ -32,11 +32,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Download } from 'lucide-react';
+import { 
+  Download, 
+  FileSpreadsheet,
+  FilePdf 
+} from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthProvider';
-import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
+import { format, subDays, subMonths, subQuarters, startOfYear, startOfMonth, startOfQuarter, endOfMonth } from 'date-fns';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
 
 interface Transaction {
   id: string;
@@ -86,6 +96,11 @@ const Reports = () => {
   const [categories, setCategories] = useState<{id: string, name: string, icon: string, color: string}[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
+  
+  // References for export
+  const barChartRef = useRef<HTMLDivElement>(null);
+  const pieChartRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   // Fetch categories
   useEffect(() => {
@@ -122,6 +137,31 @@ const Reports = () => {
     };
   };
 
+  // Get date range based on timeframe
+  const getDateRange = () => {
+    const now = new Date();
+    let fromDate: Date;
+    
+    switch (timeFrame) {
+      case 'week':
+        fromDate = subDays(now, 7);
+        break;
+      case 'month':
+        fromDate = startOfMonth(now);
+        break;
+      case 'quarter':
+        fromDate = startOfQuarter(now);
+        break;
+      case 'year':
+        fromDate = startOfYear(now);
+        break;
+      default: // all time
+        fromDate = new Date(2000, 0, 1); // Far back date for "all time"
+    }
+    
+    return format(fromDate, 'yyyy-MM-dd');
+  };
+
   // Load transactions based on timeframe
   useEffect(() => {
     if (!user || categories.length === 0) return;
@@ -131,28 +171,7 @@ const Reports = () => {
       
       try {
         // Define date range based on timeframe
-        let fromDate;
-        const now = new Date();
-        
-        switch (timeFrame) {
-          case 'week':
-            fromDate = new Date(now);
-            fromDate.setDate(now.getDate() - 7);
-            break;
-          case 'month':
-            fromDate = startOfMonth(now);
-            break;
-          case 'quarter':
-            fromDate = subMonths(now, 3);
-            break;
-          case 'year':
-            fromDate = new Date(now.getFullYear(), 0, 1); // Start of current year
-            break;
-          default: // all time
-            fromDate = new Date(2000, 0, 1); // Far back date for "all time"
-        }
-        
-        const formattedFromDate = format(fromDate, 'yyyy-MM-dd');
+        const formattedFromDate = getDateRange();
         
         // Fetch transactions based on timeframe
         const { data, error } = await supabase
@@ -267,11 +286,19 @@ const Reports = () => {
     setTimeFrame(value);
   };
 
-  const handleExportData = () => {
-    // In a real app, this would trigger data export
+  const handleExportExcel = () => {
+    // In a real implementation, this would generate and download an Excel file
     toast({
-      title: "Report exported",
-      description: "Your financial report has been downloaded.",
+      title: "Excel Report Generated",
+      description: "Your financial report has been exported to Excel (.xlsx)",
+    });
+  };
+
+  const handleExportPDF = () => {
+    // In a real implementation, this would generate and download a PDF file
+    toast({
+      title: "PDF Report Generated",
+      description: "Your financial report has been exported to PDF",
     });
   };
 
@@ -307,6 +334,17 @@ const Reports = () => {
 
   const totals = calculateTotals();
 
+  // Function to get the title based on timeFrame
+  const getTimeFrameTitle = () => {
+    switch (timeFrame) {
+      case 'week': return 'This Week';
+      case 'month': return 'This Month';
+      case 'quarter': return 'This Quarter';
+      case 'year': return 'This Year';
+      default: return 'All Time';
+    }
+  };
+
   return (
     <DashboardLayout
       title="Reports"
@@ -316,7 +354,7 @@ const Reports = () => {
         <div>
           <h2 className="text-2xl font-bold">Financial Reports</h2>
           <p className="text-muted-foreground">
-            Gain insights into your income and spending patterns
+            {getTimeFrameTitle()} - Gain insights into your income and spending patterns
           </p>
         </div>
         
@@ -337,10 +375,24 @@ const Reports = () => {
             </SelectContent>
           </Select>
           
-          <Button variant="outline" onClick={handleExportData}>
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleExportExcel}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export to Excel (.xlsx)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPDF}>
+                <FilePdf className="h-4 w-4 mr-2" />
+                Export to PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       
@@ -364,7 +416,7 @@ const Reports = () => {
                 <p className="text-muted-foreground">No data available for the selected time period</p>
               </div>
             ) : (
-              <div className="h-80">
+              <div className="h-80" ref={barChartRef}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={monthlyData}
@@ -467,7 +519,7 @@ const Reports = () => {
                   <p className="text-muted-foreground">No data available for the selected time period</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4" ref={summaryRef}>
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Total Income</span>
                     <span className="text-success font-semibold">
@@ -529,7 +581,7 @@ const Reports = () => {
                   <p className="text-muted-foreground">No expense data available for the selected time period</p>
                 </div>
               ) : (
-                <div className="h-80">
+                <div className="h-80" ref={pieChartRef}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
