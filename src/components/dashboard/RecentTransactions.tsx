@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Plus } from 'lucide-react';
@@ -29,7 +28,32 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
 }) => {
   const [transactions, setTransactions] = useState<Transaction[]>(propTransactions || []);
   const [isLoading, setIsLoading] = useState(propIsLoading);
+  const [categories, setCategories] = useState<{id: string, name: string, icon: string}[]>([]);
   const { user, setupSubscription } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      const fetchCategories = async () => {
+        const { data, error } = await supabase
+          .from('categories')
+          .select('id, name, icon');
+          
+        if (error) {
+          console.error('Error fetching categories:', error);
+        } else if (data) {
+          setCategories(data);
+        }
+      };
+      
+      fetchCategories();
+    }
+  }, [user]);
+
+  const getCategoryIcon = (categoryId: string | null): CategoryType => {
+    if (!categoryId) return 'other';
+    const category = categories.find(c => c.id === categoryId);
+    return category ? (category.icon as CategoryType) : 'other';
+  };
 
   useEffect(() => {
     if (user) {
@@ -48,17 +72,13 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
 
           if (data) {
             const formattedTransactions: Transaction[] = data.map(item => {
-              // Get category from category_id, default to 'other' if not found
-              // In a real app, we would fetch the categories and map by ID
-              const categoryType = item.category_id ? (item.category_id as unknown as CategoryType) : 'other';
-              
               return {
                 id: item.id,
                 date: new Date(item.date),
                 description: item.description,
                 amount: Number(item.amount),
                 type: item.type as 'income' | 'expense',
-                category: categoryType,
+                category: getCategoryIcon(item.category_id),
               };
             });
             
@@ -73,24 +93,19 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
 
       fetchRecentTransactions();
 
-      // Set up real-time subscription for transactions
       const cleanup = setupSubscription<any>(
         'transactions',
         'INSERT',
         (payload) => {
           const newTransaction = payload.new;
           setTransactions(current => {
-            const categoryType = newTransaction.category_id 
-              ? (newTransaction.category_id as unknown as CategoryType) 
-              : 'other';
-              
             const transaction: Transaction = {
               id: newTransaction.id,
               date: new Date(newTransaction.date),
               description: newTransaction.description,
               amount: Number(newTransaction.amount),
               type: newTransaction.type as 'income' | 'expense',
-              category: categoryType,
+              category: getCategoryIcon(newTransaction.category_id),
             };
             return [transaction, ...current.slice(0, 4)]; // Keep only the latest 5 transactions
           });
@@ -99,7 +114,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
 
       return cleanup;
     }
-  }, [user, setupSubscription]);
+  }, [user, setupSubscription, categories]);
 
   return (
     <BlurredCard className="min-h-[400px]">

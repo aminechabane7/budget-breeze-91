@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import BalanceSummary from '@/components/dashboard/BalanceSummary';
@@ -17,12 +16,39 @@ const Dashboard = () => {
   const [expenses, setExpenses] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [categories, setCategories] = useState<{id: string, name: string, icon: string}[]>([]);
   const { user, setupSubscription } = useAuth();
   const { toast } = useToast();
 
+  // Fetch categories
+  useEffect(() => {
+    if (user) {
+      const fetchCategories = async () => {
+        const { data, error } = await supabase
+          .from('categories')
+          .select('id, name, icon');
+          
+        if (error) {
+          console.error('Error fetching categories:', error);
+        } else if (data) {
+          setCategories(data);
+        }
+      };
+      
+      fetchCategories();
+    }
+  }, [user]);
+
+  // Get category icon from category id
+  const getCategoryIcon = (categoryId: string | null): CategoryType => {
+    if (!categoryId) return 'other';
+    const category = categories.find(c => c.id === categoryId);
+    return category ? (category.icon as CategoryType) : 'other';
+  };
+
   // Load user data
   useEffect(() => {
-    if (!user) return;
+    if (!user || categories.length === 0) return;
 
     const fetchData = async () => {
       setIsLoading(true);
@@ -30,7 +56,7 @@ const Dashboard = () => {
         // Fetch transactions from Supabase
         const { data: transactionsData, error: transactionsError } = await supabase
           .from('transactions')
-          .select('id, description, amount, type, date, category_id, categories(icon)')
+          .select('*')
           .eq('user_id', user.id)
           .order('date', { ascending: false })
           .limit(5);
@@ -40,7 +66,7 @@ const Dashboard = () => {
         // Fetch budgets from Supabase
         const { data: budgetsData, error: budgetsError } = await supabase
           .from('budgets')
-          .select('id, amount, category_id, categories(icon)')
+          .select('*')
           .eq('user_id', user.id);
 
         if (budgetsError) throw budgetsError;
@@ -52,30 +78,39 @@ const Dashboard = () => {
           description: t.description,
           amount: Number(t.amount),
           type: t.type as 'income' | 'expense',
-          category: (t.categories?.icon || 'other') as CategoryType,
+          category: getCategoryIcon(t.category_id),
         }));
 
-        // Calculate totals
-        const calculatedIncome = formattedTransactions
-          .filter(t => t.type === 'income')
-          .reduce((sum, t) => sum + t.amount, 0);
+        // Calculate totals from all transactions (not just the 5 most recent)
+        const { data: allTransactionsData } = await supabase
+          .from('transactions')
+          .select('amount, type')
+          .eq('user_id', user.id);
           
-        const calculatedExpenses = formattedTransactions
-          .filter(t => t.type === 'expense')
-          .reduce((sum, t) => sum + t.amount, 0);
+        const calculatedIncome = allTransactionsData
+          ?.filter(t => t.type === 'income')
+          .reduce((sum, t) => sum + Number(t.amount), 0) || 0;
+          
+        const calculatedExpenses = allTransactionsData
+          ?.filter(t => t.type === 'expense')
+          .reduce((sum, t) => sum + Number(t.amount), 0) || 0;
           
         const calculatedBalance = calculatedIncome - calculatedExpenses;
 
         // For each budget, calculate how much was spent
         const formattedBudgets = budgetsData.map(b => {
-          // Here you would calculate the spent amount based on transactions
-          // For now, we'll use a placeholder value
+          // Calculate spent amount based on transactions
+          const categoryTransactions = allTransactionsData
+            ?.filter(t => t.type === 'expense' && t.category_id === b.category_id) || [];
+            
+          const spent = categoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
+          
           return {
             id: b.id,
-            category: (b.categories?.icon || 'other') as CategoryType,
+            category: getCategoryIcon(b.category_id),
             amount: Number(b.amount),
-            spent: 0, // This would be calculated from transactions
-            period: 'monthly',
+            spent: spent,
+            period: b.period,
           };
         });
 
@@ -97,14 +132,14 @@ const Dashboard = () => {
     };
 
     fetchData();
-  }, [user, toast]);
+  }, [user, toast, categories]);
 
   // Set up real-time subscriptions
   useEffect(() => {
-    if (!user) return;
+    if (!user || categories.length === 0) return;
 
     // Subscribe to new transactions
-    const unsubscribeTransactions = setupSubscription<Transaction>(
+    const unsubscribeTransactions = setupSubscription<any>(
       'transactions',
       'INSERT',
       (payload) => {
@@ -116,7 +151,7 @@ const Dashboard = () => {
             description: payload.new.description,
             amount: Number(payload.new.amount),
             type: payload.new.type as 'income' | 'expense',
-            category: 'other' as CategoryType, // You'll need to fetch the category separately
+            category: getCategoryIcon(payload.new.category_id),
           };
 
           setTransactions(prev => {
@@ -137,7 +172,7 @@ const Dashboard = () => {
     );
 
     // Subscribe to new budgets
-    const unsubscribeBudgets = setupSubscription<Budget>(
+    const unsubscribeBudgets = setupSubscription<any>(
       'budgets',
       'INSERT',
       (payload) => {
@@ -145,7 +180,7 @@ const Dashboard = () => {
           // Map the new budget to the expected format
           const newBudget = {
             id: payload.new.id,
-            category: 'other' as CategoryType, // You'll need to fetch the category separately
+            category: getCategoryIcon(payload.new.category_id),
             amount: Number(payload.new.amount),
             spent: 0,
             period: payload.new.period,
@@ -160,7 +195,7 @@ const Dashboard = () => {
       unsubscribeTransactions();
       unsubscribeBudgets();
     };
-  }, [user, setupSubscription]);
+  }, [user, setupSubscription, categories]);
 
   return (
     <DashboardLayout

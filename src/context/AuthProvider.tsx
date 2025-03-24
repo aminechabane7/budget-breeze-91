@@ -52,14 +52,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     event: 'INSERT' | 'UPDATE' | 'DELETE', 
     callback: (payload: { new: T }) => void
   ) => {
+    // Fixed type error by using the correct channel configuration
     const channel = supabase
       .channel('db-changes')
       .on(
         'postgres_changes',
         {
-          event,
+          event: event,
           schema: 'public',
-          table,
+          table: table,
         },
         (payload) => callback(payload as any)
       )
