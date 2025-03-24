@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { format } from 'date-fns';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,11 +50,11 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
     }
   }, [user]);
 
-  const getCategoryIcon = (categoryId: string | null): CategoryType => {
+  const getCategoryIcon = useCallback((categoryId: string | null): CategoryType => {
     if (!categoryId) return 'other';
     const category = categories.find(c => c.id === categoryId);
     return category ? (category.icon as CategoryType) : 'other';
-  };
+  }, [categories]);
 
   useEffect(() => {
     if (user && categories.length > 0) {
@@ -101,6 +101,8 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
         (payload) => {
           const newTransaction = payload.new;
           setTransactions(current => {
+            if (current.some(t => t.id === newTransaction.id)) return current;
+            
             const transaction: Transaction = {
               id: newTransaction.id,
               date: new Date(newTransaction.date),
@@ -110,14 +112,14 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
               category: getCategoryIcon(newTransaction.category_id),
               categoryId: newTransaction.category_id,
             };
-            return [transaction, ...current.slice(0, 4)]; // Keep only the latest 5 transactions
+            return [transaction, ...current.slice(0, 4)];
           });
         }
       );
 
       return cleanup;
     }
-  }, [user, setupSubscription, categories]);
+  }, [user, setupSubscription, categories, getCategoryIcon]);
 
   return (
     <BlurredCard className="min-h-[400px]">

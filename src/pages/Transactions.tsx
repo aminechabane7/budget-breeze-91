@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Plus, Search, Filter, ArrowUpDown, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,21 @@ const Transactions = () => {
   const { toast } = useToast();
   const { user, setupSubscription } = useAuth();
 
+  // Helper function to get category icon from category_id
+  const getCategoryIconFromId = useCallback((categoryId: string | null): CategoryType => {
+    if (!categoryId) return 'other';
+    const category = categories.find(c => c.id === categoryId);
+    return category ? (category.icon as CategoryType) : 'other';
+  }, [categories]);
+
+  // Helper function to get category name from category_id
+  const getCategoryNameFromId = useCallback((categoryId: string | null): string => {
+    if (!categoryId) return 'Other';
+    const category = categories.find(c => c.id === categoryId);
+    return category ? category.name : 'Other';
+  }, [categories]);
+
+  // Fetch categories once when the component mounts
   useEffect(() => {
     if (user) {
       const fetchCategories = async () => {
@@ -82,21 +97,10 @@ const Transactions = () => {
     }
   }, [user]);
 
-  // Helper function to get category icon from category_id
-  const getCategoryIconFromId = (categoryId: string | null): CategoryType => {
-    if (!categoryId) return 'other';
-    const category = categories.find(c => c.id === categoryId);
-    return category ? (category.icon as CategoryType) : 'other';
-  };
-
-  // Helper function to get category name from category_id
-  const getCategoryNameFromId = (categoryId: string | null): string => {
-    if (!categoryId) return 'Other';
-    const category = categories.find(c => c.id === categoryId);
-    return category ? category.name : 'Other';
-  };
-
-  const fetchTransactions = async () => {
+  // Fetch transactions once the categories are loaded
+  const fetchTransactions = useCallback(async () => {
+    if (!categories.length) return;
+    
     setIsLoading(true);
     
     try {
@@ -133,18 +137,23 @@ const Transactions = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [categories, getCategoryIconFromId, toast]);
 
+  // Set up real-time subscription for transactions
   useEffect(() => {
-    if (user) {
+    if (user && categories.length > 0) {
       fetchTransactions();
       
-      const cleanup = setupSubscription<any>(
+      // Set up subscription for INSERT events
+      const insertCleanup = setupSubscription<any>(
         'transactions',
         'INSERT',
         (payload) => {
+          // Only add if it's not already in the list (avoid duplicates)
           const newTransaction = payload.new;
           setTransactions((current) => {
+            if (current.some(t => t.id === newTransaction.id)) return current;
+            
             const transaction: Transaction = {
               id: newTransaction.id,
               date: new Date(newTransaction.date),
@@ -158,11 +167,53 @@ const Transactions = () => {
           });
         }
       );
-      
-      return cleanup;
-    }
-  }, [user, setupSubscription, categories]);
 
+      // Set up subscription for UPDATE events
+      const updateCleanup = setupSubscription<any>(
+        'transactions',
+        'UPDATE',
+        (payload) => {
+          const updatedTransaction = payload.new;
+          setTransactions((current) => {
+            return current.map(t => {
+              if (t.id === updatedTransaction.id) {
+                return {
+                  id: updatedTransaction.id,
+                  date: new Date(updatedTransaction.date),
+                  description: updatedTransaction.description,
+                  amount: Number(updatedTransaction.amount),
+                  type: updatedTransaction.type as 'income' | 'expense',
+                  category: getCategoryIconFromId(updatedTransaction.category_id),
+                  categoryId: updatedTransaction.category_id,
+                };
+              }
+              return t;
+            });
+          });
+        }
+      );
+
+      // Set up subscription for DELETE events
+      const deleteCleanup = setupSubscription<any>(
+        'transactions',
+        'DELETE',
+        (payload) => {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setTransactions((current) => current.filter(t => t.id !== deletedId));
+          }
+        }
+      );
+      
+      return () => {
+        insertCleanup();
+        updateCleanup();
+        deleteCleanup();
+      };
+    }
+  }, [user, categories, setupSubscription, getCategoryIconFromId, fetchTransactions]);
+
+  // Filter transactions based on search query
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredTransactions(transactions);
@@ -173,12 +224,12 @@ const Transactions = () => {
       );
       setFilteredTransactions(filtered);
     }
-  }, [searchQuery, transactions]);
+  }, [searchQuery, transactions, getCategoryNameFromId]);
 
-  const getCategoryId = (categoryName: CategoryType): string | null => {
+  const getCategoryId = useCallback((categoryName: CategoryType): string | null => {
     const category = categories.find(c => c.icon === categoryName);
     return category ? category.id : null;
-  };
+  }, [categories]);
 
   const handleAddTransaction = async () => {
     if (!newTransaction.description || !newTransaction.amount || !newTransaction.date) {
@@ -203,21 +254,22 @@ const Transactions = () => {
     const categoryId = getCategoryId(newTransaction.category);
     
     try {
-      const { data, error } = await supabase
+      // Use upsert to handle both inserts and updates
+      const { error } = await supabase
         .from('transactions')
-        .insert({
+        .upsert({
+          id: currentTransaction?.id,
           description: newTransaction.description,
           amount: amount,
           type: newTransaction.type,
           category_id: categoryId,
           date: newTransaction.date,
           user_id: user?.id,
-        })
-        .select()
-        .single();
+        });
         
       if (error) throw error;
       
+      // Reset form state
       setNewTransaction({
         description: '',
         amount: '',
@@ -225,16 +277,19 @@ const Transactions = () => {
         category: 'other',
         date: format(new Date(), 'yyyy-MM-dd'),
       });
+      setCurrentTransaction(null);
       setIsAddDialogOpen(false);
       
       toast({
-        title: "Transaction added",
-        description: "Your transaction has been added successfully.",
+        title: currentTransaction ? "Transaction updated" : "Transaction added",
+        description: currentTransaction 
+          ? "Your transaction has been updated successfully." 
+          : "Your transaction has been added successfully.",
       });
     } catch (error: any) {
-      console.error('Error adding transaction:', error);
+      console.error('Error handling transaction:', error);
       toast({
-        title: "Failed to add transaction",
+        title: currentTransaction ? "Failed to update transaction" : "Failed to add transaction",
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
@@ -269,9 +324,6 @@ const Transactions = () => {
         
       if (error) throw error;
       
-      const updatedTransactions = transactions.filter(t => t.id !== currentTransaction.id);
-      setTransactions(updatedTransactions);
-      setFilteredTransactions(updatedTransactions);
       setIsDeleteDialogOpen(false);
       setCurrentTransaction(null);
       
