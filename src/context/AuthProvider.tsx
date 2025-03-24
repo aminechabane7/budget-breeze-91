@@ -53,17 +53,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     callback: (payload: { new: T }) => void
   ) => {
     // Fix the channel configuration to use the correct syntax
+    const channelConfig = {
+      event: event,
+      schema: 'public',
+      table: table,
+    };
+    
     const channel = supabase
       .channel('db-changes')
-      .on(
-        'postgres_changes', 
-        {
-          event: event,
-          schema: 'public',
-          table: table,
-        },
-        (payload) => callback(payload as any)
-      )
+      .on('postgres_changes', channelConfig, (payload) => callback(payload as any))
       .subscribe();
 
     // Return a cleanup function

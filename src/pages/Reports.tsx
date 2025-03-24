@@ -34,6 +34,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/context/AuthProvider';
+import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
 interface Transaction {
   id: string;
@@ -42,6 +45,7 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   category: CategoryType;
+  categoryId: string | null;
 }
 
 interface CategoryTotal {
@@ -79,73 +83,188 @@ const Reports = () => {
   const [timeFrame, setTimeFrame] = useState('year');
   const [categoryData, setCategoryData] = useState<CategoryTotal[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
+  const [categories, setCategories] = useState<{id: string, name: string, icon: string, color: string}[]>([]);
   const { toast } = useToast();
+  const { user } = useAuth();
 
+  // Fetch categories
   useEffect(() => {
-    // Simulate loading data from API
-    setTimeout(() => {
-      // Sample data
-      const currentYear = new Date().getFullYear();
+    if (user) {
+      const fetchCategories = async () => {
+        const { data, error } = await supabase
+          .from('categories')
+          .select('id, name, icon, color');
+          
+        if (error) {
+          console.error('Error fetching categories:', error);
+          toast({
+            title: "Error fetching categories",
+            description: error.message,
+            variant: "destructive",
+          });
+        } else if (data) {
+          setCategories(data);
+        }
+      };
       
-      // Generate more realistic monthly data for the year
-      const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
+      fetchCategories();
+    }
+  }, [user, toast]);
+
+  // Get category info
+  const getCategoryInfo = (categoryId: string | null) => {
+    if (!categoryId) return { name: "Other", icon: "other" as CategoryType, color: colorMap.other };
+    const category = categories.find(c => c.id === categoryId);
+    return {
+      name: category ? category.name : "Other",
+      icon: category ? (category.icon as CategoryType) : "other" as CategoryType,
+      color: category ? category.color || colorMap.other : colorMap.other
+    };
+  };
+
+  // Load transactions based on timeframe
+  useEffect(() => {
+    if (!user || categories.length === 0) return;
+
+    const fetchTransactions = async () => {
+      setIsLoading(true);
       
-      const mockMonthlyData: MonthlyData[] = months.map((month, index) => {
-        // Base values with some randomness
-        const baseIncome = 4000 + Math.random() * 1000;
-        const baseExpense = 3000 + Math.random() * 800;
+      try {
+        // Define date range based on timeframe
+        let fromDate;
+        const now = new Date();
         
-        // Seasonal variations
-        let income = baseIncome;
-        let expenses = baseExpense;
+        switch (timeFrame) {
+          case 'week':
+            fromDate = new Date(now);
+            fromDate.setDate(now.getDate() - 7);
+            break;
+          case 'month':
+            fromDate = startOfMonth(now);
+            break;
+          case 'quarter':
+            fromDate = subMonths(now, 3);
+            break;
+          case 'year':
+            fromDate = new Date(now.getFullYear(), 0, 1); // Start of current year
+            break;
+          default: // all time
+            fromDate = new Date(2000, 0, 1); // Far back date for "all time"
+        }
         
-        // December bonus
-        if (index === 11) income += 2000;
+        const formattedFromDate = format(fromDate, 'yyyy-MM-dd');
         
-        // Higher expenses in winter months (heating, holidays)
-        if (index === 0 || index === 1 || index === 11) expenses += 500;
+        // Fetch transactions based on timeframe
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .gte('date', formattedFromDate)
+          .order('date', { ascending: true });
+          
+        if (error) throw error;
         
-        // Higher expenses in summer (vacation)
-        if (index === 6 || index === 7) expenses += 800;
-        
-        return {
-          month,
-          income: parseFloat(income.toFixed(2)),
-          expenses: parseFloat(expenses.toFixed(2)),
-        };
-      });
+        if (data) {
+          // Format transactions
+          const formattedTransactions = data.map(item => {
+            const categoryInfo = getCategoryInfo(item.category_id);
+            return {
+              id: item.id,
+              date: new Date(item.date),
+              description: item.description,
+              amount: Number(item.amount),
+              type: item.type as 'income' | 'expense',
+              category: categoryInfo.icon,
+              categoryId: item.category_id,
+            };
+          });
+          
+          setTransactions(formattedTransactions);
+          
+          // Calculate monthly data
+          calculateMonthlyData(formattedTransactions);
+          
+          // Calculate category data
+          calculateCategoryData(formattedTransactions);
+        }
+      } catch (error) {
+        console.error('Error fetching transactions:', error);
+        toast({
+          title: "Error fetching transactions",
+          description: "Unable to load transaction data",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchTransactions();
+  }, [user, timeFrame, categories, toast]);
+  
+  // Calculate monthly data for charts
+  const calculateMonthlyData = (transactions: Transaction[]) => {
+    // Group transactions by month
+    const months: Record<string, { income: number, expenses: number }> = {};
+    
+    transactions.forEach(transaction => {
+      const monthKey = format(transaction.date, 'MMM yyyy');
       
-      // Sample transactions for the year
-      const mockTransactions: Transaction[] = [];
+      if (!months[monthKey]) {
+        months[monthKey] = { income: 0, expenses: 0 };
+      }
       
-      // Mock data setup omitted for brevity...
+      if (transaction.type === 'income') {
+        months[monthKey].income += transaction.amount;
+      } else {
+        months[monthKey].expenses += transaction.amount;
+      }
+    });
+    
+    // Convert to array format for charts
+    const monthlyDataArray = Object.keys(months).map(month => ({
+      month,
+      income: Number(months[month].income.toFixed(2)),
+      expenses: Number(months[month].expenses.toFixed(2)),
+    }));
+    
+    setMonthlyData(monthlyDataArray);
+  };
+  
+  // Calculate category data for pie chart
+  const calculateCategoryData = (transactions: Transaction[]) => {
+    // Get expense transactions
+    const expenseTransactions = transactions.filter(t => t.type === 'expense');
+    
+    // Group by category
+    const categoryTotals: Record<string, number> = {};
+    
+    expenseTransactions.forEach(transaction => {
+      const categoryInfo = getCategoryInfo(transaction.categoryId);
+      const categoryName = categoryInfo.name;
       
-      // Category data for pie chart
-      const mockCategoryData: CategoryTotal[] = [
-        { name: 'Groceries', value: 2845.67, color: colorMap.groceries },
-        { name: 'Rent', value: 14400, color: colorMap.rent },
-        { name: 'Utilities', value: 1850.45, color: colorMap.utilities },
-        { name: 'Dining', value: 2156.32, color: colorMap.dining },
-        { name: 'Transportation', value: 1245.78, color: colorMap.transportation },
-        { name: 'Health', value: 978.50, color: colorMap.health },
-        { name: 'Entertainment', value: 1540.25, color: colorMap.entertainment },
-        { name: 'Travel', value: 3200.00, color: colorMap.travel },
-        { name: 'Other', value: 1845.92, color: colorMap.other },
-      ];
+      if (!categoryTotals[categoryName]) {
+        categoryTotals[categoryName] = 0;
+      }
       
-      setTransactions(mockTransactions);
-      setMonthlyData(mockMonthlyData);
-      setCategoryData(mockCategoryData);
-      setIsLoading(false);
-    }, 1500);
-  }, []);
+      categoryTotals[categoryName] += transaction.amount;
+    });
+    
+    // Convert to array format for charts
+    const categoryDataArray = Object.keys(categoryTotals).map(category => {
+      const matchingCategory = categories.find(c => c.name === category);
+      return {
+        name: category,
+        value: Number(categoryTotals[category].toFixed(2)),
+        color: matchingCategory?.color || colorMap.other,
+      };
+    });
+    
+    setCategoryData(categoryDataArray);
+  };
 
   const handleTimeFrameChange = (value: string) => {
     setTimeFrame(value);
-    // In a real app, this would trigger a data refresh based on the selected time frame
   };
 
   const handleExportData = () => {
@@ -155,6 +274,38 @@ const Reports = () => {
       description: "Your financial report has been downloaded.",
     });
   };
+
+  // Utility function to calculate totals
+  const calculateTotals = () => {
+    const totalIncome = monthlyData.reduce((sum, item) => sum + item.income, 0);
+    const totalExpenses = monthlyData.reduce((sum, item) => sum + item.expenses, 0);
+    const netSavings = totalIncome - totalExpenses;
+    const avgMonthlyIncome = monthlyData.length > 0 ? totalIncome / monthlyData.length : 0;
+    const avgMonthlyExpenses = monthlyData.length > 0 ? totalExpenses / monthlyData.length : 0;
+    
+    // Find month with highest savings
+    let highestSavingsMonth = monthlyData.length > 0 ? monthlyData[0].month : 'N/A';
+    let highestSavings = monthlyData.length > 0 ? monthlyData[0].income - monthlyData[0].expenses : 0;
+    
+    monthlyData.forEach(month => {
+      const savings = month.income - month.expenses;
+      if (savings > highestSavings) {
+        highestSavings = savings;
+        highestSavingsMonth = month.month;
+      }
+    });
+    
+    return {
+      totalIncome,
+      totalExpenses,
+      netSavings,
+      avgMonthlyIncome,
+      avgMonthlyExpenses,
+      highestSavingsMonth
+    };
+  };
+
+  const totals = calculateTotals();
 
   return (
     <DashboardLayout
@@ -208,6 +359,10 @@ const Reports = () => {
               <div className="h-80 flex items-center justify-center">
                 <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
               </div>
+            ) : monthlyData.length === 0 ? (
+              <div className="h-80 flex items-center justify-center">
+                <p className="text-muted-foreground">No data available for the selected time period</p>
+              </div>
             ) : (
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -249,6 +404,10 @@ const Reports = () => {
               {isLoading ? (
                 <div className="h-64 flex items-center justify-center">
                   <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+                </div>
+              ) : monthlyData.length === 0 ? (
+                <div className="h-64 flex items-center justify-center">
+                  <p className="text-muted-foreground">No data available for the selected time period</p>
                 </div>
               ) : (
                 <div className="h-64">
@@ -303,51 +462,51 @@ const Reports = () => {
                     </div>
                   ))}
                 </div>
+              ) : monthlyData.length === 0 ? (
+                <div className="flex items-center justify-center h-64">
+                  <p className="text-muted-foreground">No data available for the selected time period</p>
+                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Total Income</span>
                     <span className="text-success font-semibold">
-                      ${monthlyData.reduce((sum, item) => sum + item.income, 0).toFixed(2)}
+                      ${totals.totalIncome.toFixed(2)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Total Expenses</span>
                     <span className="text-destructive font-semibold">
-                      ${monthlyData.reduce((sum, item) => sum + item.expenses, 0).toFixed(2)}
+                      ${totals.totalExpenses.toFixed(2)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Net Savings</span>
                     <span className="font-semibold">
-                      ${monthlyData.reduce((sum, item) => sum + (item.income - item.expenses), 0).toFixed(2)}
+                      ${totals.netSavings.toFixed(2)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Average Monthly Income</span>
                     <span className="font-semibold">
-                      ${(monthlyData.reduce((sum, item) => sum + item.income, 0) / monthlyData.length).toFixed(2)}
+                      ${totals.avgMonthlyIncome.toFixed(2)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Average Monthly Expenses</span>
                     <span className="font-semibold">
-                      ${(monthlyData.reduce((sum, item) => sum + item.expenses, 0) / monthlyData.length).toFixed(2)}
+                      ${totals.avgMonthlyExpenses.toFixed(2)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Highest Savings Month</span>
                     <span className="font-semibold">
-                      {monthlyData.reduce(
-                        (max, item) => 
-                          (item.income - item.expenses) > (max.income - max.expenses) ? item : max,
-                        monthlyData[0]
-                      ).month}
+                      {totals.highestSavingsMonth}
                     </span>
                   </div>
                 </div>
@@ -364,6 +523,10 @@ const Reports = () => {
               {isLoading ? (
                 <div className="h-80 flex items-center justify-center">
                   <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+                </div>
+              ) : categoryData.length === 0 ? (
+                <div className="h-80 flex items-center justify-center">
+                  <p className="text-muted-foreground">No expense data available for the selected time period</p>
                 </div>
               ) : (
                 <div className="h-80">
@@ -415,6 +578,10 @@ const Reports = () => {
                     </div>
                   ))}
                 </div>
+              ) : categoryData.length === 0 ? (
+                <div className="flex items-center justify-center h-64">
+                  <p className="text-muted-foreground">No expense data available for the selected time period</p>
+                </div>
               ) : (
                 <div className="space-y-6">
                   {[...categoryData]
@@ -463,6 +630,10 @@ const Reports = () => {
               <div className="h-64 flex items-center justify-center">
                 <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
               </div>
+            ) : monthlyData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center">
+                <p className="text-muted-foreground">No data available for the selected time period</p>
+              </div>
             ) : (
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -509,6 +680,10 @@ const Reports = () => {
             {isLoading ? (
               <div className="h-80 flex items-center justify-center">
                 <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+              </div>
+            ) : monthlyData.length === 0 ? (
+              <div className="h-80 flex items-center justify-center">
+                <p className="text-muted-foreground">No income data available for the selected time period</p>
               </div>
             ) : (
               <div className="h-80">
@@ -560,19 +735,23 @@ const Reports = () => {
                     </div>
                   ))}
                 </div>
+              ) : monthlyData.length === 0 ? (
+                <div className="flex items-center justify-center h-64">
+                  <p className="text-muted-foreground">No income data available for the selected time period</p>
+                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Total Annual Income</span>
                     <span className="text-success font-semibold">
-                      ${monthlyData.reduce((sum, item) => sum + item.income, 0).toFixed(2)}
+                      ${totals.totalIncome.toFixed(2)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center py-2 border-b">
                     <span className="font-medium">Average Monthly Income</span>
                     <span className="font-semibold">
-                      ${(monthlyData.reduce((sum, item) => sum + item.income, 0) / monthlyData.length).toFixed(2)}
+                      ${totals.avgMonthlyIncome.toFixed(2)}
                     </span>
                   </div>
                   
@@ -596,17 +775,19 @@ const Reports = () => {
                     </span>
                   </div>
                   
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="font-medium">Income Growth</span>
-                    <span className="font-semibold">
-                      {(() => {
-                        const firstMonth = monthlyData[0].income;
-                        const lastMonth = monthlyData[monthlyData.length - 1].income;
-                        const growth = ((lastMonth - firstMonth) / firstMonth) * 100;
-                        return `${growth > 0 ? '+' : ''}${growth.toFixed(1)}%`;
-                      })()}
-                    </span>
-                  </div>
+                  {monthlyData.length > 1 && (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="font-medium">Income Growth</span>
+                      <span className="font-semibold">
+                        {(() => {
+                          const firstMonth = monthlyData[0].income;
+                          const lastMonth = monthlyData[monthlyData.length - 1].income;
+                          const growth = firstMonth > 0 ? ((lastMonth - firstMonth) / firstMonth) * 100 : 0;
+                          return `${growth > 0 ? '+' : ''}${growth.toFixed(1)}%`;
+                        })()}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </BlurredCard>
