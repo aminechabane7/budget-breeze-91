@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import AccountBalance from '@/components/dashboard/AccountBalance';
 import TransactionSummary, { Transaction } from '@/components/dashboard/TransactionSummary';
@@ -10,6 +10,17 @@ import { CategoryType } from '@/components/shared/CategoryIcon';
 import { useAuth } from '@/context/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+
+// Define the transaction data type for the payload
+interface TransactionData {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  category_id: string | null;
+  user_id: string;
+}
 
 const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -117,7 +128,7 @@ const Dashboard = () => {
     if (!user || categories.length === 0) return;
 
     // Subscribe to new transactions
-    const unsubscribeTransactions = setupSubscription(
+    const unsubscribeTransactions = setupSubscription<TransactionData>(
       'transactions',
       'INSERT',
       (payload) => {
