@@ -1,9 +1,15 @@
 
-import React from 'react';
-import { CreditCard, Copy, MoreVertical } from 'lucide-react';
+import React, { useState } from 'react';
+import { CreditCard, Copy, MoreVertical, X, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/context/AuthProvider';
+import { supabase } from '@/integrations/supabase/client';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface BankAccount {
   id: string;
@@ -24,13 +30,22 @@ interface CreditCardType {
 
 const LinkedAccounts: React.FC = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [isAddCardOpen, setIsAddCardOpen] = useState(false);
+  const [newCard, setNewCard] = useState({
+    bankName: '',
+    cardNumber: '',
+    expiryDate: '',
+    cardholderName: '',
+    cardType: 'visa' as 'visa' | 'mastercard'
+  });
   
   const bankAccounts: BankAccount[] = [
     { id: '1', bankName: 'Chase Bank', accountNumber: '•••• 4582', balance: 12480.55, isPrimary: true },
     { id: '2', bankName: 'Bank of America', accountNumber: '•••• 7723', balance: 4235.12 },
   ];
   
-  const cards: CreditCardType[] = [
+  const [cards, setCards] = useState<CreditCardType[]>([
     { 
       id: '1', 
       bankName: 'Chase Bank', 
@@ -39,7 +54,7 @@ const LinkedAccounts: React.FC = () => {
       cardholderName: 'John Doe',
       cardType: 'visa'
     },
-  ];
+  ]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -47,6 +62,94 @@ const LinkedAccounts: React.FC = () => {
       title: "Copied to clipboard",
       description: "Account number has been copied to clipboard",
     });
+  };
+
+  const handleAddCard = async () => {
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to add a card",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Validate inputs
+      if (!newCard.bankName || !newCard.cardNumber || !newCard.expiryDate || !newCard.cardholderName) {
+        toast({
+          title: "Missing information",
+          description: "Please fill in all card details",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Format card number for display
+      const formattedCardNumber = `•••• •••• •••• ${newCard.cardNumber.slice(-4)}`;
+      
+      // Add card to state
+      const newCardObj: CreditCardType = {
+        id: `card-${Date.now()}`,
+        bankName: newCard.bankName,
+        cardNumber: formattedCardNumber,
+        expiryDate: newCard.expiryDate,
+        cardholderName: newCard.cardholderName,
+        cardType: newCard.cardType
+      };
+      
+      setCards([...cards, newCardObj]);
+      
+      // Save to database (optional - using the user_metadata feature)
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) throw userError;
+      
+      // Get current metadata or initialize empty object
+      const currentMetadata = userData.user.user_metadata || {};
+      
+      // Add cards to metadata (ensure we're not storing full card numbers!)
+      const updatedMetadata = {
+        ...currentMetadata,
+        cards: [...(currentMetadata.cards || []), {
+          id: newCardObj.id,
+          bankName: newCardObj.bankName,
+          cardNumber: formattedCardNumber, // Never store full card number!
+          expiryDate: newCardObj.expiryDate,
+          cardholderName: newCardObj.cardholderName,
+          cardType: newCardObj.cardType
+        }]
+      };
+      
+      // Update user metadata
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: updatedMetadata
+      });
+      
+      if (updateError) throw updateError;
+      
+      // Close dialog and reset form
+      setIsAddCardOpen(false);
+      setNewCard({
+        bankName: '',
+        cardNumber: '',
+        expiryDate: '',
+        cardholderName: '',
+        cardType: 'visa'
+      });
+      
+      toast({
+        title: "Card added successfully",
+        description: `Your ${newCard.bankName} card has been added to your account.`,
+      });
+    } catch (error) {
+      console.error("Error adding card:", error);
+      toast({
+        title: "Failed to add card",
+        description: "There was an error adding your card. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -162,12 +265,109 @@ const LinkedAccounts: React.FC = () => {
               <div className="absolute right-12 -bottom-6 h-20 w-20 rounded-full bg-white/5"></div>
             </div>
           ))}
-          <Button variant="outline" className="w-full mt-2">
+          <Button variant="outline" className="w-full mt-2" onClick={() => setIsAddCardOpen(true)}>
             <CreditCard className="h-4 w-4 mr-2" />
             Add new card
           </Button>
         </div>
       </CardContent>
+
+      {/* Add Card Dialog */}
+      <Dialog open={isAddCardOpen} onOpenChange={setIsAddCardOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Add New Card</DialogTitle>
+            <DialogDescription>
+              Enter your card details to add a new card to your account.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="bank-name" className="text-right">
+                Bank
+              </Label>
+              <Input
+                id="bank-name"
+                value={newCard.bankName}
+                onChange={(e) => setNewCard({...newCard, bankName: e.target.value})}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="card-number" className="text-right">
+                Card Number
+              </Label>
+              <Input
+                id="card-number"
+                value={newCard.cardNumber}
+                onChange={(e) => {
+                  // Only allow numbers and limit to 16 digits
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 16);
+                  setNewCard({...newCard, cardNumber: value});
+                }}
+                placeholder="1234 5678 9012 3456"
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="expiry-date" className="text-right">
+                Expiry Date
+              </Label>
+              <Input
+                id="expiry-date"
+                value={newCard.expiryDate}
+                onChange={(e) => {
+                  // Format as MM/YY
+                  let value = e.target.value.replace(/\D/g, '');
+                  if (value.length > 2) {
+                    value = value.slice(0, 2) + '/' + value.slice(2, 4);
+                  }
+                  setNewCard({...newCard, expiryDate: value});
+                }}
+                placeholder="MM/YY"
+                className="col-span-3"
+                maxLength={5}
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="cardholder-name" className="text-right">
+                Cardholder
+              </Label>
+              <Input
+                id="cardholder-name"
+                value={newCard.cardholderName}
+                onChange={(e) => setNewCard({...newCard, cardholderName: e.target.value})}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="card-type" className="text-right">
+                Card Type
+              </Label>
+              <Select
+                value={newCard.cardType}
+                onValueChange={(value) => setNewCard({...newCard, cardType: value as 'visa' | 'mastercard'})}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select card type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="visa">Visa</SelectItem>
+                  <SelectItem value="mastercard">Mastercard</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddCardOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddCard}>
+              Add Card
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };
