@@ -1,6 +1,7 @@
+
 import React, { useEffect, useState, useCallback } from 'react';
 import { format } from 'date-fns';
-import { Plus } from 'lucide-react';
+import { Plus, Clock, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import BlurredCard from '../shared/BlurredCard';
 import CategoryIcon, { CategoryType } from '../shared/CategoryIcon';
@@ -16,6 +17,8 @@ export interface Transaction {
   type: 'income' | 'expense';
   category: CategoryType;
   categoryId?: string | null;
+  status?: 'pending' | 'completed';
+  bankName?: string;
 }
 
 interface RecentTransactionsProps {
@@ -30,7 +33,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
   const [transactions, setTransactions] = useState<Transaction[]>(propTransactions || []);
   const [isLoading, setIsLoading] = useState(propIsLoading);
   const [categories, setCategories] = useState<{id: string, name: string, icon: string}[]>([]);
-  const { user, setupSubscription } = useAuth();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (user) {
@@ -81,6 +84,9 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
                 type: item.type as 'income' | 'expense',
                 category: getCategoryIcon(item.category_id),
                 categoryId: item.category_id,
+                // Add random status and bank name for demo
+                status: Math.random() > 0.3 ? 'completed' : 'pending',
+                bankName: ['Chase', 'Bank of America', 'Wells Fargo', 'Citibank'][Math.floor(Math.random() * 4)]
               };
             });
             
@@ -95,31 +101,39 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
 
       fetchRecentTransactions();
 
-      const cleanup = setupSubscription<any>(
-        'transactions',
-        'INSERT',
-        (payload) => {
-          const newTransaction = payload.new;
-          setTransactions(current => {
-            if (current.some(t => t.id === newTransaction.id)) return current;
-            
-            const transaction: Transaction = {
-              id: newTransaction.id,
-              date: new Date(newTransaction.date),
-              description: newTransaction.description,
-              amount: Number(newTransaction.amount),
-              type: newTransaction.type as 'income' | 'expense',
-              category: getCategoryIcon(newTransaction.category_id),
-              categoryId: newTransaction.category_id,
-            };
-            return [transaction, ...current.slice(0, 4)];
-          });
-        }
-      );
+      // Set up real-time subscription for new transactions
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'transactions' },
+          (payload) => {
+            const newTransaction = payload.new;
+            setTransactions(current => {
+              if (current.some(t => t.id === newTransaction.id)) return current;
+              
+              const transaction: Transaction = {
+                id: newTransaction.id,
+                date: new Date(newTransaction.date),
+                description: newTransaction.description,
+                amount: Number(newTransaction.amount),
+                type: newTransaction.type as 'income' | 'expense',
+                category: getCategoryIcon(newTransaction.category_id),
+                categoryId: newTransaction.category_id,
+                status: Math.random() > 0.3 ? 'completed' : 'pending',
+                bankName: ['Chase', 'Bank of America', 'Wells Fargo', 'Citibank'][Math.floor(Math.random() * 4)]
+              };
+              return [transaction, ...current.slice(0, 4)];
+            });
+          }
+        )
+        .subscribe();
 
-      return cleanup;
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
-  }, [user, setupSubscription, categories, getCategoryIcon]);
+  }, [user, categories, getCategoryIcon]);
 
   return (
     <BlurredCard className="min-h-[400px]">
@@ -158,13 +172,31 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({
               key={transaction.id}
               className="flex items-center space-x-4 p-3 hover:bg-black/5 rounded-lg transition-colors"
             >
-              <CategoryIcon category={transaction.category} size={18} />
+              <div className="h-10 w-10 rounded-full flex items-center justify-center bg-primary/10">
+                <CategoryIcon category={transaction.category} size={18} />
+              </div>
               
               <div className="flex-1">
                 <p className="font-medium line-clamp-1">{transaction.description}</p>
-                <p className="text-xs text-muted-foreground">
-                  {format(transaction.date, 'MMM dd, yyyy')}
-                </p>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{transaction.bankName || 'Bank'}</span>
+                  <span className="h-1 w-1 rounded-full bg-muted-foreground"></span>
+                  <span>{format(transaction.date, 'MMM dd, yyyy')}</span>
+                  {transaction.status && (
+                    <>
+                      <span className="h-1 w-1 rounded-full bg-muted-foreground"></span>
+                      {transaction.status === 'pending' ? (
+                        <span className="flex items-center text-amber-500">
+                          <Clock className="h-3 w-3 mr-1" /> Pending
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-emerald-500">
+                          <CheckCircle2 className="h-3 w-3 mr-1" /> Completed
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
               
               <span className={`font-medium ${

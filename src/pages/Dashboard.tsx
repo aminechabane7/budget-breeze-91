@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import BalanceSummary from '@/components/dashboard/BalanceSummary';
-import RecentTransactions, { Transaction } from '@/components/dashboard/RecentTransactions';
-import BudgetProgress, { Budget } from '@/components/dashboard/BudgetProgress';
-import IncomeVsExpenses from '@/components/dashboard/IncomeVsExpenses';
+import AccountBalance from '@/components/dashboard/AccountBalance';
+import TransactionSummary, { Transaction } from '@/components/dashboard/TransactionSummary';
+import QuickActions from '@/components/dashboard/QuickActions';
+import RevenueStreams from '@/components/dashboard/RevenueStreams';
+import LinkedAccounts from '@/components/dashboard/LinkedAccounts';
 import { CategoryType } from '@/components/shared/CategoryIcon';
 import { useAuth } from '@/context/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,7 +17,6 @@ const Dashboard = () => {
   const [income, setIncome] = useState(0);
   const [expenses, setExpenses] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
   const [categories, setCategories] = useState<{id: string, name: string, icon: string}[]>([]);
   const { user, setupSubscription } = useAuth();
   const { toast } = useToast();
@@ -59,29 +60,11 @@ const Dashboard = () => {
           .select('*')
           .eq('user_id', user.id)
           .order('date', { ascending: false })
-          .limit(5);
+          .limit(10);
 
         if (transactionsError) throw transactionsError;
 
-        // Fetch budgets from Supabase
-        const { data: budgetsData, error: budgetsError } = await supabase
-          .from('budgets')
-          .select('*')
-          .eq('user_id', user.id);
-
-        if (budgetsError) throw budgetsError;
-
-        // Map the data to the expected formats
-        const formattedTransactions = transactionsData.map(t => ({
-          id: t.id,
-          date: new Date(t.date),
-          description: t.description,
-          amount: Number(t.amount),
-          type: t.type as 'income' | 'expense',
-          category: getCategoryIcon(t.category_id),
-        }));
-
-        // Calculate totals from all transactions (not just the 5 most recent)
+        // Calculate totals from all transactions (not just the 10 most recent)
         const { data: allTransactionsData } = await supabase
           .from('transactions')
           .select('amount, type, category_id')
@@ -97,25 +80,20 @@ const Dashboard = () => {
           
         const calculatedBalance = calculatedIncome - calculatedExpenses;
 
-        // For each budget, calculate how much was spent
-        const formattedBudgets = budgetsData.map(b => {
-          // Calculate spent amount based on transactions
-          const categoryTransactions = allTransactionsData
-            ?.filter(t => t.type === 'expense' && t.category_id === b.category_id) || [];
-            
-          const spent = categoryTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
-          
-          return {
-            id: b.id,
-            category: getCategoryIcon(b.category_id),
-            amount: Number(b.amount),
-            spent: spent,
-            period: b.period,
-          };
-        });
+        // Map the data to the expected formats with random status for demo
+        const formattedTransactions = transactionsData?.map(t => ({
+          id: t.id,
+          date: new Date(t.date),
+          description: t.description,
+          amount: Number(t.amount),
+          type: t.type as 'income' | 'expense',
+          category: getCategoryIcon(t.category_id),
+          categoryId: t.category_id,
+          status: Math.random() > 0.3 ? 'completed' as const : 'pending' as const,
+          bankName: ['Chase', 'Bank of America', 'Wells Fargo', 'Citibank'][Math.floor(Math.random() * 4)]
+        })) || [];
 
         setTransactions(formattedTransactions);
-        setBudgets(formattedBudgets);
         setIncome(calculatedIncome);
         setExpenses(calculatedExpenses);
         setBalance(calculatedBalance);
@@ -139,7 +117,7 @@ const Dashboard = () => {
     if (!user || categories.length === 0) return;
 
     // Subscribe to new transactions
-    const unsubscribeTransactions = setupSubscription<any>(
+    const unsubscribeTransactions = setupSubscription(
       'transactions',
       'INSERT',
       (payload) => {
@@ -152,11 +130,14 @@ const Dashboard = () => {
             amount: Number(payload.new.amount),
             type: payload.new.type as 'income' | 'expense',
             category: getCategoryIcon(payload.new.category_id),
+            categoryId: payload.new.category_id,
+            status: Math.random() > 0.3 ? 'completed' as const : 'pending' as const,
+            bankName: ['Chase', 'Bank of America', 'Wells Fargo', 'Citibank'][Math.floor(Math.random() * 4)]
           };
 
           setTransactions(prev => {
-            const updated = [newTransaction, ...prev].slice(0, 5);
-            return updated;
+            if (prev.some(t => t.id === newTransaction.id)) return prev;
+            return [newTransaction, ...prev.slice(0, 9)];
           });
 
           // Update totals
@@ -171,64 +152,38 @@ const Dashboard = () => {
       }
     );
 
-    // Subscribe to new budgets
-    const unsubscribeBudgets = setupSubscription<any>(
-      'budgets',
-      'INSERT',
-      (payload) => {
-        if (payload.new) {
-          // Map the new budget to the expected format
-          const newBudget = {
-            id: payload.new.id,
-            category: getCategoryIcon(payload.new.category_id),
-            amount: Number(payload.new.amount),
-            spent: 0,
-            period: payload.new.period,
-          };
-
-          setBudgets(prev => [...prev, newBudget]);
-        }
-      }
-    );
-
     return () => {
       unsubscribeTransactions();
-      unsubscribeBudgets();
     };
   }, [user, setupSubscription, categories]);
 
   return (
     <DashboardLayout
-      title="Dashboard"
-      description="Overview of your financial situation"
+      title="Financial Dashboard"
+      description="Overview of your financial activity"
     >
       <div className="space-y-8">
-        <BalanceSummary
-          balance={balance}
-          income={income}
-          expenses={expenses}
-          isLoading={isLoading}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AccountBalance
+            balance={balance}
+            income={income}
+            expenses={expenses}
+            isLoading={isLoading}
+          />
+          <QuickActions />
+        </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <RecentTransactions 
+          <div className="lg:col-span-2 space-y-6">
+            <TransactionSummary 
               transactions={transactions}
               isLoading={isLoading}
             />
+            <RevenueStreams />
           </div>
           
-          <div className="space-y-6">
-            <IncomeVsExpenses
-              income={income}
-              expenses={expenses}
-              isLoading={isLoading}
-            />
-            
-            <BudgetProgress
-              budgets={budgets}
-              isLoading={isLoading}
-            />
+          <div className="lg:col-span-1">
+            <LinkedAccounts />
           </div>
         </div>
       </div>
