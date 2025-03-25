@@ -5,16 +5,24 @@ import {
   Home,
   BarChart3,
   CreditCard,
+  PieChart,
   ArrowDownUp,
   Receipt,
   Settings,
   Bell,
   HelpCircle,
   LogOut,
-  UserCircle,
-  Calendar,
-  LayoutDashboard,
 } from 'lucide-react';
+import { 
+  Sidebar, 
+  SidebarContent, 
+  SidebarHeader, 
+  SidebarMenu, 
+  SidebarMenuButton, 
+  SidebarMenuItem, 
+  SidebarMenuLabel, 
+  SidebarFooter,
+} from '@/components/ui/sidebar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,61 +33,100 @@ const DashboardSidebar: React.FC = () => {
   const { user, signOut } = useAuth();
   
   const menuItems = [
-    { href: '/dashboard', icon: <Home className="h-5 w-5" />, label: 'Home' },
-    { href: '/transactions', icon: <ArrowDownUp className="h-5 w-5" />, label: 'Transactions' },
-    { href: '/reports', icon: <BarChart3 className="h-5 w-5" />, label: 'Reports' },
-    { href: '/notifications', icon: <Bell className="h-5 w-5" />, label: 'Notifications', notification: true },
-    { href: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
+    {
+      label: 'Overview',
+      items: [
+        { href: '/dashboard', icon: <Home />, label: 'Dashboard' },
+        { href: '/business', icon: <BarChart3 />, label: 'Business' },
+      ]
+    },
+    {
+      label: 'Finances',
+      items: [
+        { href: '/transactions', icon: <ArrowDownUp />, label: 'Transactions' },
+        { href: '/categories', icon: <PieChart />, label: 'Categories' },
+        { href: '/budget', icon: <CreditCard />, label: 'Budget' },
+        { href: '/reports', icon: <Receipt />, label: 'Reports' },
+      ]
+    },
   ];
 
   return (
-    <aside className="hidden md:flex flex-col border-r border-border h-screen fixed left-0 top-0 w-20 bg-background z-10">
+    <aside className="hidden md:block border-r border-border h-screen fixed left-0 top-0 w-60 bg-background z-10">
       <div className="flex flex-col h-full">
-        <div className="p-4 flex justify-center border-b border-border">
-          <div className="bg-primary h-10 w-10 rounded-full flex items-center justify-center text-white font-semibold">
-            F
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="bg-primary h-8 w-8 rounded-md flex items-center justify-center text-white font-semibold">
+              F
+            </div>
+            <h1 className="text-xl font-bold">FinTrack</h1>
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto py-8">
-          <ul className="space-y-6">
-            {menuItems.map((item) => (
-              <li key={item.href} className="px-4">
-                <Link
-                  to={item.href}
-                  className={`flex flex-col items-center justify-center rounded-lg p-3 ${
-                    location.pathname === item.href 
-                      ? 'bg-primary/10 text-primary' 
-                      : 'text-gray-500 hover:text-primary hover:bg-gray-100 transition-colors'
-                  }`}
-                  aria-label={item.label}
-                >
-                  <div className="relative">
-                    {item.icon}
-                    {item.notification && (
-                      <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full"></span>
-                    )}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+        <div className="flex-1 overflow-y-auto py-4 px-3">
+          {menuItems.map((group, idx) => (
+            <div key={idx} className="mb-6">
+              <h2 className="text-xs uppercase font-semibold text-muted-foreground mb-2 px-3">
+                {group.label}
+              </h2>
+              <ul className="space-y-1">
+                {group.items.map((item, itemIdx) => (
+                  <li key={itemIdx}>
+                    <Link
+                      to={item.href}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                        location.pathname === item.href 
+                          ? 'bg-primary/10 text-primary font-medium' 
+                          : 'hover:bg-muted'
+                      }`}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
         
         <div className="p-4 border-t border-border mt-auto">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="w-full h-10 rounded-full"
-            onClick={() => signOut && signOut()}
-          >
-            <Avatar className="h-10 w-10">
-              <AvatarImage src="/lovable-uploads/ff7b9736-dea6-4fed-9297-4f41ced94292.png" alt="User" />
+          <div className="flex items-center justify-between mb-4">
+            <Button variant="ghost" size="icon">
+              <Bell className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <Settings className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <HelpCircle className="h-5 w-5" />
+            </Button>
+          </div>
+          
+          <div className="flex items-center gap-3 p-2 rounded-md hover:bg-muted transition-colors">
+            <Avatar>
+              <AvatarImage src="" alt="User" />
               <AvatarFallback className="bg-primary/10 text-primary">
                 {user?.email?.charAt(0).toUpperCase() || 'U'}
               </AvatarFallback>
             </Avatar>
-          </Button>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">
+                {user?.email || 'User'}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {user?.email || 'user@example.com'}
+              </p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => signOut && signOut()}
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </aside>

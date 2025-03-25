@@ -53,7 +53,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       .on(
         'postgres_changes',
         { event: eventType, schema: 'public', table },
-        (payload) => callback(payload as { new: T; old?: T })
+        callback
       )
       .subscribe();
 

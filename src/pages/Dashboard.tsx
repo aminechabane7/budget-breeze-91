@@ -1,29 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import AccountBalance from '@/components/dashboard/AccountBalance';
+import TransactionSummary, { Transaction } from '@/components/dashboard/TransactionSummary';
+import QuickActions from '@/components/dashboard/QuickActions';
+import RevenueStreams from '@/components/dashboard/RevenueStreams';
+import LinkedAccounts from '@/components/dashboard/LinkedAccounts';
+import { CategoryType } from '@/components/shared/CategoryIcon';
 import { useAuth } from '@/context/AuthProvider';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-import { CategoryType } from '@/components/shared/CategoryIcon';
-import QuickActionCard from '@/components/dashboard/QuickActionCard';
-import TransactionHistory from '@/components/dashboard/TransactionHistory';
-import RecentActivities from '@/components/dashboard/RecentActivities';
-import UpcomingPayments from '@/components/dashboard/UpcomingPayments';
-import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
-import CreditCard from '@/components/dashboard/CreditCard';
-import { CreditCard as CreditCardIcon, ArrowRightLeft, Building, Send } from 'lucide-react';
-
-export interface Transaction {
-  id: string;
-  date: Date;
-  description: string;
-  amount: number;
-  type: 'income' | 'expense';
-  category: CategoryType;
-  categoryId?: string | null;
-  status?: 'pending' | 'completed';
-  bankName?: string;
-}
 
 const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -131,11 +117,12 @@ const Dashboard = () => {
     if (!user || categories.length === 0) return;
 
     // Subscribe to new transactions
-    const unsubscribeTransactions = setupSubscription<any>(
+    const unsubscribeTransactions = setupSubscription(
       'transactions',
       'INSERT',
       (payload) => {
         if (payload.new) {
+          // Map the new transaction to the expected format
           const newTransaction = {
             id: payload.new.id,
             date: new Date(payload.new.date),
@@ -171,52 +158,33 @@ const Dashboard = () => {
   }, [user, setupSubscription, categories]);
 
   return (
-    <DashboardLayout>
-      <div className="my-8">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-gray-500">Payments updates</p>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-10">
-        <div className="md:col-span-9">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-            <QuickActionCard
-              title="Transfer via"
-              subtitle="Card number"
-              amount="1,200"
-              icon={<CreditCardIcon className="h-5 w-5 text-gray-600" />}
-            />
-            <QuickActionCard
-              title="Transfer"
-              subtitle="Other Banks"
-              amount="150"
-              icon={<ArrowRightLeft className="h-5 w-5 text-gray-600" />}
-            />
-            <QuickActionCard
-              title="Transfer"
-              subtitle="Same Bank"
-              amount="1,500"
-              icon={<Building className="h-5 w-5 text-gray-600" />}
-            />
-            <QuickActionCard
-              title="Transfer to"
-              subtitle="Other Bank"
-              amount="1,500"
-              icon={<Send className="h-5 w-5 text-gray-600" />}
-            />
-          </div>
-          
-          <AnalyticsChart />
-          
-          <div className="mt-6">
-            <TransactionHistory transactions={[]} />
-          </div>
+    <DashboardLayout
+      title="Financial Dashboard"
+      description="Overview of your financial activity"
+    >
+      <div className="space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AccountBalance
+            balance={balance}
+            income={income}
+            expenses={expenses}
+            isLoading={isLoading}
+          />
+          <QuickActions />
         </div>
         
-        <div className="md:col-span-3 space-y-6">
-          <CreditCard />
-          <RecentActivities />
-          <UpcomingPayments />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <TransactionSummary 
+              transactions={transactions}
+              isLoading={isLoading}
+            />
+            <RevenueStreams />
+          </div>
+          
+          <div className="lg:col-span-1">
+            <LinkedAccounts />
+          </div>
         </div>
       </div>
     </DashboardLayout>

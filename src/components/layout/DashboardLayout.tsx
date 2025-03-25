@@ -16,10 +16,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   description,
 }) => {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-slate-900">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
       <DashboardSidebar />
       
-      <div className="md:pl-20">
+      <div className="md:pl-60">
         <Navbar />
         
         <main className="flex-1 pt-24 pb-16">
