@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import BlurredCard from '@/components/shared/BlurredCard';
@@ -29,6 +28,12 @@ interface Category {
   transactions: number;
 }
 
+interface BudgetData {
+  id: string;
+  category_id: string;
+  amount: number;
+}
+
 const Categories = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -46,34 +51,45 @@ const Categories = () => {
   const { toast } = useToast();
   const { user, setupSubscription } = useAuth();
 
-  // Load categories
   useEffect(() => {
     if (!user) return;
 
-    const fetchCategories = async () => {
+    const fetchCategoriesAndBudgets = async () => {
       setIsLoading(true);
       try {
-        // Fetch categories from Supabase
-        const { data, error } = await supabase
+        const { data: categoriesData, error: categoriesError } = await supabase
           .from('categories')
           .select('*')
           .eq('user_id', user.id);
 
-        if (error) throw error;
+        if (categoriesError) throw categoriesError;
 
-        // Transform the data to match our component's expected format
-        const formattedCategories = data.map(category => ({
+        const { data: budgetsData, error: budgetsError } = await supabase
+          .from('budgets')
+          .select('*')
+          .eq('user_id', user.id);
+
+        if (budgetsError) throw budgetsError;
+
+        const budgetMap = (budgetsData || []).reduce((map: Record<string, number>, budget) => {
+          if (budget.category_id) {
+            map[budget.category_id] = Number(budget.amount);
+          }
+          return map;
+        }, {});
+
+        const formattedCategories = (categoriesData || []).map(category => ({
           id: category.id,
           name: category.name,
           type: category.icon as CategoryType || 'other',
-          budget: 0, // Would be calculated from budgets table
-          spent: 0, // Would be calculated from transactions
-          transactions: 0, // Would be counted from transactions
+          budget: budgetMap[category.id] || 0, 
+          spent: 0,
+          transactions: 0,
         }));
 
         setCategories(formattedCategories);
       } catch (error) {
-        console.error("Error fetching categories:", error);
+        console.error("Error fetching categories and budgets:", error);
         toast({
           title: "Failed to load categories",
           description: "Please try again later",
@@ -84,14 +100,13 @@ const Categories = () => {
       }
     };
 
-    fetchCategories();
+    fetchCategoriesAndBudgets();
   }, [user, toast]);
 
-  // Set up real-time subscription for categories
   useEffect(() => {
     if (!user) return;
 
-    const unsubscribe = setupSubscription<{
+    const categorySubscription = setupSubscription<{
       id: string;
       name: string;
       icon: string;
@@ -115,8 +130,42 @@ const Categories = () => {
       }
     );
 
+    const budgetSubscription = setupSubscription<BudgetData>(
+      'budgets',
+      'UPDATE',
+      (payload) => {
+        if (payload.new && payload.new.category_id) {
+          setCategories(prev => 
+            prev.map(category => 
+              category.id === payload.new.category_id
+                ? { ...category, budget: Number(payload.new.amount) }
+                : category
+            )
+          );
+        }
+      }
+    );
+
+    const budgetInsertSubscription = setupSubscription<BudgetData>(
+      'budgets',
+      'INSERT',
+      (payload) => {
+        if (payload.new && payload.new.category_id) {
+          setCategories(prev => 
+            prev.map(category => 
+              category.id === payload.new.category_id
+                ? { ...category, budget: Number(payload.new.amount) }
+                : category
+            )
+          );
+        }
+      }
+    );
+
     return () => {
-      unsubscribe();
+      categorySubscription();
+      budgetSubscription();
+      budgetInsertSubscription();
     };
   }, [user, setupSubscription]);
 
@@ -159,7 +208,6 @@ const Categories = () => {
   };
 
   const handleAddCategory = async () => {
-    // Validate inputs
     if (!newCategory.name) {
       toast({
         title: "Invalid input",
@@ -180,8 +228,7 @@ const Categories = () => {
     
     try {
       if (editingCategory) {
-        // Update existing category in Supabase
-        const { error } = await supabase
+        const { error: categoryError } = await supabase
           .from('categories')
           .update({
             name: newCategory.name,
@@ -191,9 +238,47 @@ const Categories = () => {
           .eq('id', editingCategory.id)
           .eq('user_id', user?.id);
 
-        if (error) throw error;
+        if (categoryError) throw categoryError;
         
-        // Update the categories state
+        if (newCategory.budget) {
+          const budgetAmount = parseFloat(newCategory.budget);
+          
+          const { data: existingBudget, error: budgetCheckError } = await supabase
+            .from('budgets')
+            .select('id')
+            .eq('category_id', editingCategory.id)
+            .eq('user_id', user?.id)
+            .maybeSingle();
+            
+          if (budgetCheckError) throw budgetCheckError;
+          
+          if (existingBudget) {
+            const { error: updateError } = await supabase
+              .from('budgets')
+              .update({
+                amount: budgetAmount,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingBudget.id)
+              .eq('user_id', user?.id);
+              
+            if (updateError) throw updateError;
+          } else {
+            const { error: insertError } = await supabase
+              .from('budgets')
+              .insert({
+                category_id: editingCategory.id,
+                user_id: user?.id,
+                amount: budgetAmount,
+                name: `${newCategory.name} Budget`,
+                period: 'monthly',
+                start_date: new Date().toISOString().split('T')[0],
+              });
+              
+            if (insertError) throw insertError;
+          }
+        }
+        
         setCategories(prev => 
           prev.map(category => 
             category.id === editingCategory.id
@@ -212,18 +297,34 @@ const Categories = () => {
           description: `${newCategory.name} has been updated.`,
         });
       } else {
-        // Add new category to Supabase
-        const { error } = await supabase
+        const { data: newCategoryData, error: categoryError } = await supabase
           .from('categories')
           .insert({
             name: newCategory.name,
             icon: newCategory.type,
-            type: 'expense', // Default to expense, could be made selectable
+            type: 'expense',
             user_id: user?.id,
-            color: '#' + Math.floor(Math.random()*16777215).toString(16), // Random color
-          });
+            color: '#' + Math.floor(Math.random()*16777215).toString(16),
+          })
+          .select()
+          .single();
 
-        if (error) throw error;
+        if (categoryError) throw categoryError;
+        
+        if (newCategory.budget && parseFloat(newCategory.budget) > 0) {
+          const { error: budgetError } = await supabase
+            .from('budgets')
+            .insert({
+              category_id: newCategoryData.id,
+              user_id: user?.id,
+              amount: parseFloat(newCategory.budget),
+              name: `${newCategory.name} Budget`,
+              period: 'monthly',
+              start_date: new Date().toISOString().split('T')[0],
+            });
+            
+          if (budgetError) throw budgetError;
+        }
         
         toast({
           title: "Category added",
@@ -231,7 +332,6 @@ const Categories = () => {
         });
       }
       
-      // Reset form and close dialog
       setNewCategory({
         name: '',
         type: 'other',
@@ -435,7 +535,6 @@ const Categories = () => {
         )}
       </BlurredCard>
       
-      {/* Add/Edit Category Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>

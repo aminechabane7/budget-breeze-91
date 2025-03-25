@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../integrations/supabase/client';
@@ -42,7 +43,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
   }, []);
 
-  const setupSubscription = <T>(
+  const setupSubscription = <T,>(
     table: string,
     eventType: 'INSERT' | 'UPDATE' | 'DELETE',
     callback: (payload: { new: T; old?: T }) => void
