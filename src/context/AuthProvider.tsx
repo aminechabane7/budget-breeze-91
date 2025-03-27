@@ -10,6 +10,8 @@ interface AuthContextProps {
   login: (email: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  signOut: () => Promise<void>;
+  loading: boolean;
   updateUser: () => Promise<void>;
   setupSubscription: <T extends any>(
     tableName: string,
@@ -20,12 +22,14 @@ interface AuthContextProps {
 
 const AuthContext = createContext<AuthContextProps>({
   isLoading: false,
+  loading: false,
   user: null,
   error: null,
   session: null,
   login: async () => {},
   register: async () => {},
   logout: async () => {},
+  signOut: async () => {},
   updateUser: async () => {},
   setupSubscription: () => () => {},
 });
@@ -136,6 +140,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signOut = logout;
+
   const updateUser = async () => {
     try {
       setAuthState(prev => ({ ...prev, isLoading: true }));
@@ -177,7 +183,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       )
       .subscribe();
 
-    // Return a cleanup function
     return () => {
       supabase.removeChannel(channel);
     };
@@ -185,12 +190,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value: AuthContextProps = {
     isLoading: authState.isLoading,
+    loading: authState.isLoading,
     user: authState.user,
     error: authState.error,
     session: session,
     login,
     register,
     logout,
+    signOut,
     updateUser,
     setupSubscription,
   };

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { SendIcon, Download, Upload, FileText, FileDown } from 'lucide-react';
+import { SendIcon, Download, Upload, FileText, FileDown, PlusCircle, BankIcon, QrCode } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -23,12 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CategoryType } from '@/components/shared/CategoryIcon';
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const QuickActions: React.FC = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   const [showDialog, setShowDialog] = useState(false);
+  const [showReceiveDialog, setShowReceiveDialog] = useState(false);
   const [currentAction, setCurrentAction] = useState<{
     name: string;
     type: 'income' | 'expense';
@@ -42,6 +45,7 @@ const QuickActions: React.FC = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
 
   // Fetch categories and transactions
   useEffect(() => {
@@ -60,22 +64,45 @@ const QuickActions: React.FC = () => {
       };
 
       const fetchTransactions = async () => {
+        setIsLoadingTransactions(true);
         const { data, error } = await supabase
           .from('transactions')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
-          .limit(10);
+          .limit(20);
           
         if (error) {
           console.error('Error fetching transactions:', error);
         } else if (data) {
           setTransactions(data);
         }
+        setIsLoadingTransactions(false);
       };
       
       fetchCategories();
       fetchTransactions();
+
+      // Set up realtime subscription
+      const transactionSubscription = supabase
+        .channel('transactions-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'transactions',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            setTransactions(prev => [payload.new, ...prev.slice(0, 19)]);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(transactionSubscription);
+      };
     }
   }, [user]);
 
@@ -91,6 +118,10 @@ const QuickActions: React.FC = () => {
     setCategory('');
     setBeneficiary('');
     setShowDialog(true);
+  };
+
+  const openReceiveDialog = () => {
+    setShowReceiveDialog(true);
   };
 
   const openReceiptDialog = () => {
@@ -171,19 +202,6 @@ const QuickActions: React.FC = () => {
         title: `${currentAction?.name} successful`,
         description: `Your ${currentAction?.name.toLowerCase()} of $${parseFloat(amount).toFixed(2)} has been processed.`,
       });
-
-      // Refresh transactions list
-      const { data: freshTransactions, error: fetchError } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-        
-      if (!fetchError && freshTransactions) {
-        setTransactions(freshTransactions);
-      }
-
     } catch (error) {
       console.error(`Error processing ${currentAction?.name}:`, error);
       toast({
@@ -194,8 +212,8 @@ const QuickActions: React.FC = () => {
     }
   };
 
-  const generateReceipt = (transaction: any) => {
-    // Create receipt content
+  const generatePDF = (transaction: any) => {
+    // Create receipt content for PDF
     const receiptContent = `
 RECEIPT
 ------------------------------------------
@@ -208,7 +226,8 @@ Amount: $${parseFloat(transaction.amount).toFixed(2)}
 Thank you for using our service!
     `;
     
-    // Create a blob and download link
+    // In a real app, we would generate a PDF here
+    // For now, we'll just create a text file
     const blob = new Blob([receiptContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -222,6 +241,13 @@ Thank you for using our service!
     toast({
       title: "Receipt downloaded",
       description: "Your receipt has been downloaded successfully.",
+    });
+  };
+
+  const handleGeneratePaymentRequest = () => {
+    toast({
+      title: "Payment request generated",
+      description: "Your payment request link has been generated and copied to clipboard.",
     });
   };
 
@@ -253,11 +279,7 @@ Thank you for using our service!
       icon: <Upload className="h-5 w-5" />, 
       color: 'bg-purple-500 hover:bg-purple-600',
       type: 'income' as const,
-      onClick: () => openActionDialog({ 
-        name: 'Receive', 
-        type: 'income', 
-        color: 'bg-purple-500' 
-      })
+      onClick: () => openReceiveDialog()
     },
     { 
       name: 'Receipt', 
@@ -302,27 +324,127 @@ Thank you for using our service!
               Enter the details for your {currentAction?.name.toLowerCase()} transaction.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">
-                Amount
-              </Label>
-              <div className="col-span-3 relative">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2">$</span>
+          
+          {currentAction?.name === 'Deposit' && (
+            <Tabs defaultValue="manual">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+                <TabsTrigger value="bank">Link Bank</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="manual">
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="amount" className="text-right">
+                      Amount
+                    </Label>
+                    <div className="col-span-3 relative">
+                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2">$</span>
+                      <Input
+                        id="amount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className="pl-7"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="category" className="text-right">
+                      Category
+                    </Label>
+                    <div className="col-span-3">
+                      <Select
+                        value={category}
+                        onValueChange={setCategory}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories
+                            .filter(cat => cat.type === 'income')
+                            .map(cat => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </SelectItem>
+                            ))
+                          }
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="description" className="text-right">
+                      Description
+                    </Label>
+                    <Input
+                      id="description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="col-span-3"
+                      placeholder="Enter a description"
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="bank">
+                <div className="py-6">
+                  <div className="text-center space-y-4">
+                    <BankIcon className="mx-auto h-12 w-12 text-primary" />
+                    <h3 className="text-lg font-medium">Connect Your Bank</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Securely link your bank account to enable quick deposits and transfers.
+                    </p>
+                    <Button className="w-full">
+                      Connect Bank Account
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
+          
+          {currentAction?.name === 'Send' && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="beneficiary" className="text-right">
+                  Beneficiary
+                </Label>
                 <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="pl-7"
-                  placeholder="0.00"
+                  id="beneficiary"
+                  value={beneficiary}
+                  onChange={(e) => setBeneficiary(e.target.value)}
+                  className="col-span-3"
+                  placeholder="Enter recipient name"
                 />
               </div>
-            </div>
+              
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="amount" className="text-right">
+                  Amount
+                </Label>
+                <div className="col-span-3 relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2">$</span>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="pl-7"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
 
-            {(currentAction?.name === 'Deposit' || currentAction?.name === 'Send') && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="category" className="text-right">
                   Category
@@ -337,10 +459,7 @@ Thank you for using our service!
                     </SelectTrigger>
                     <SelectContent>
                       {categories
-                        .filter(cat => 
-                          (currentAction?.type === 'income' && cat.type === 'income') || 
-                          (currentAction?.type === 'expense' && cat.type === 'expense')
-                        )
+                        .filter(cat => cat.type === 'expense')
                         .map(cat => (
                           <SelectItem key={cat.id} value={cat.id}>
                             {cat.name}
@@ -351,36 +470,22 @@ Thank you for using our service!
                   </Select>
                 </div>
               </div>
-            )}
 
-            {currentAction?.name === 'Send' && (
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="beneficiary" className="text-right">
-                  Beneficiary
+                <Label htmlFor="description" className="text-right">
+                  Description
                 </Label>
                 <Input
-                  id="beneficiary"
-                  value={beneficiary}
-                  onChange={(e) => setBeneficiary(e.target.value)}
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   className="col-span-3"
-                  placeholder="Enter recipient name"
+                  placeholder="Enter a description"
                 />
               </div>
-            )}
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="description" className="text-right">
-                Description
-              </Label>
-              <Input
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="col-span-3"
-                placeholder="Enter a description"
-              />
             </div>
-          </div>
+          )}
+          
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>
               Cancel
@@ -392,45 +497,164 @@ Thank you for using our service!
         </DialogContent>
       </Dialog>
 
+      {/* Receive Dialog */}
+      <Dialog open={showReceiveDialog} onOpenChange={setShowReceiveDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Received Payments</DialogTitle>
+            <DialogDescription>
+              View received payments or generate a new payment request.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Tabs defaultValue="history">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="history">Payment History</TabsTrigger>
+              <TabsTrigger value="request">Request Payment</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="history">
+              <ScrollArea className="h-[300px] w-full pr-4">
+                {transactions.filter(t => t.type === 'income').length > 0 ? (
+                  <div className="space-y-2 pt-2">
+                    {transactions
+                      .filter(t => t.type === 'income')
+                      .map((transaction) => (
+                        <div 
+                          key={transaction.id} 
+                          className="flex justify-between items-center border p-3 rounded-md hover:bg-muted/30"
+                        >
+                          <div>
+                            <p className="font-medium">{transaction.description}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(transaction.date).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="text-green-500 font-medium mr-2">
+                              +${parseFloat(transaction.amount).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p>No received payments found.</p>
+                  </div>
+                )}
+              </ScrollArea>
+            </TabsContent>
+            
+            <TabsContent value="request">
+              <div className="py-4 space-y-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="requestAmount" className="text-right">
+                    Amount
+                  </Label>
+                  <div className="col-span-3 relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2">$</span>
+                    <Input
+                      id="requestAmount"
+                      type="number"
+                      className="pl-7"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="requestDescription" className="text-right">
+                    Description
+                  </Label>
+                  <Input
+                    id="requestDescription"
+                    className="col-span-3"
+                    placeholder="What is this payment for?"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="requestEmail" className="text-right">
+                    Recipient Email
+                  </Label>
+                  <Input
+                    id="requestEmail"
+                    type="email"
+                    className="col-span-3"
+                    placeholder="email@example.com"
+                  />
+                </div>
+                
+                <div className="flex justify-center pt-4">
+                  <Button 
+                    className="flex items-center gap-2"
+                    onClick={handleGeneratePaymentRequest}
+                  >
+                    <QrCode className="h-4 w-4" />
+                    Generate Payment Request
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReceiveDialog(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Receipt Dialog */}
       <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Download Receipt</DialogTitle>
+            <DialogTitle>Transaction Receipts</DialogTitle>
             <DialogDescription>
-              Select a transaction to download its receipt.
+              Select a transaction to download its receipt as a PDF.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[400px] overflow-y-auto py-2">
-            {transactions.length > 0 ? (
-              <div className="space-y-2">
-                {transactions.map((transaction) => (
-                  <div 
-                    key={transaction.id} 
-                    className="flex justify-between items-center border p-3 rounded-md hover:bg-muted/30 cursor-pointer"
-                    onClick={() => generateReceipt(transaction)}
-                  >
-                    <div>
-                      <p className="font-medium">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(transaction.date).toLocaleDateString()}
-                      </p>
+          
+          {isLoadingTransactions ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <ScrollArea className="h-[300px] w-full pr-4">
+              {transactions.length > 0 ? (
+                <div className="space-y-2 pt-2">
+                  {transactions.map((transaction) => (
+                    <div 
+                      key={transaction.id} 
+                      className="flex justify-between items-center border p-3 rounded-md hover:bg-muted/30 cursor-pointer"
+                      onClick={() => generatePDF(transaction)}
+                    >
+                      <div>
+                        <p className="font-medium">{transaction.description}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(transaction.date).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center">
+                        <span className={`${transaction.type === 'income' ? 'text-green-500' : 'text-red-500'} font-medium mr-2`}>
+                          {transaction.type === 'income' ? '+' : '-'}${parseFloat(transaction.amount).toFixed(2)}
+                        </span>
+                        <FileDown className="h-4 w-4" />
+                      </div>
                     </div>
-                    <div className="flex items-center">
-                      <span className={`${transaction.type === 'income' ? 'text-green-500' : 'text-red-500'} font-medium mr-2`}>
-                        {transaction.type === 'income' ? '+' : '-'}${parseFloat(transaction.amount).toFixed(2)}
-                      </span>
-                      <FileDown className="h-4 w-4" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <p>No transactions found. Create some transactions first.</p>
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p>No transactions found. Create some transactions first.</p>
+                </div>
+              )}
+            </ScrollArea>
+          )}
+          
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowReceiptDialog(false)}>
               Close

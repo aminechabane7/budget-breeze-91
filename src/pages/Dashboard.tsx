@@ -22,6 +22,15 @@ interface TransactionData {
   user_id: string;
 }
 
+// Define the revenue stream data type
+interface RevenueStreamData {
+  id: string;
+  name: string;
+  amount: number;
+  date: string;
+  user_id: string;
+}
+
 const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [balance, setBalance] = useState(0);
@@ -29,6 +38,7 @@ const Dashboard = () => {
   const [expenses, setExpenses] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<{id: string, name: string, icon: string}[]>([]);
+  const [revenueStreams, setRevenueStreams] = useState<any[]>([]);
   const { user, setupSubscription } = useAuth();
   const { toast } = useToast();
 
@@ -57,6 +67,48 @@ const Dashboard = () => {
     const category = categories.find(c => c.id === categoryId);
     return category ? (category.icon as CategoryType) : 'other';
   };
+
+  // Fetch revenue streams
+  useEffect(() => {
+    if (user) {
+      const fetchRevenueStreams = async () => {
+        const { data, error } = await supabase
+          .from('revenue_streams')
+          .select('*')
+          .eq('user_id', user.id);
+          
+        if (error) {
+          console.error('Error fetching revenue streams:', error);
+        } else if (data) {
+          setRevenueStreams(data);
+        }
+      };
+      
+      fetchRevenueStreams();
+
+      // Set up realtime subscription for revenue streams
+      const revenueSubscription = supabase
+        .channel('revenue-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen for all events (INSERT, UPDATE, DELETE)
+            schema: 'public',
+            table: 'revenue_streams',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            // Refresh revenue streams when changes occur
+            fetchRevenueStreams();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(revenueSubscription);
+      };
+    }
+  }, [user]);
 
   // Load user data
   useEffect(() => {
