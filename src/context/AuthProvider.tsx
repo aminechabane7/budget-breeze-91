@@ -1,139 +1,198 @@
-
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/components/ui/use-toast';
 
-type AuthContextType = {
-  user: any | null;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
-  loading: boolean;
-  setupSubscription: <T = any>(
-    table: string,
+interface AuthContextProps {
+  isLoading: boolean;
+  user: User | null;
+  error: AuthError | null;
+  session: Session | null;
+  login: (email: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  updateUser: () => Promise<void>;
+  setupSubscription: <T extends any>(
+    tableName: string,
     event: 'INSERT' | 'UPDATE' | 'DELETE',
-    callback: (payload: { new: T; old: T | null }) => void
+    callback: (payload: { new: T; old: T }) => void
   ) => () => void;
-};
+}
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextProps>({
+  isLoading: false,
+  user: null,
+  error: null,
+  session: null,
+  login: async () => {},
+  register: async () => {},
+  logout: async () => {},
+  updateUser: async () => {},
+  setupSubscription: () => () => {},
+});
+
+interface AuthState {
+  isLoading: boolean;
+  user: User | null;
+  error: AuthError | null;
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
+  const [authState, setAuthState] = useState<AuthState>({
+    isLoading: true,
+    user: null,
+    error: null,
+  });
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    const getCurrentUser = async () => {
+    const getSession = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        setUser(user);
-      } catch (error) {
-        console.error('Error getting current user:', error);
-      } finally {
-        setLoading(false);
+        setAuthState(prev => ({ ...prev, isLoading: true }));
+        const { data: { session } } = await supabase.auth.getSession();
+
+        setSession(session);
+        setAuthState({
+          isLoading: false,
+          user: session?.user || null,
+          error: null,
+        });
+      } catch (error: any) {
+        setAuthState({
+          isLoading: false,
+          user: null,
+          error: error,
+        });
       }
     };
 
-    getCurrentUser();
+    getSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+    supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      setAuthState({
+        isLoading: false,
+        user: session?.user || null,
+        error: null,
+      });
     });
-
-    return () => {
-      subscription.unsubscribe();
-    };
   }, []);
 
-  const setupSubscription = useCallback(<T = any>(
-    table: string,
+  const login = async (email: string) => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true }));
+      const { error } = await supabase.auth.signInWithOtp({ email });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error: any) {
+      setAuthState({
+        isLoading: false,
+        user: null,
+        error: error,
+      });
+    } finally {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const register = async (email: string, password: string) => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true }));
+      const { error } = await supabase.auth.signUp({ email, password, options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      } });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error: any) {
+      setAuthState({
+        isLoading: false,
+        user: null,
+        error: error,
+      });
+    } finally {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const logout = async () => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true }));
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        throw error;
+      }
+    } catch (error: any) {
+      setAuthState({
+        isLoading: false,
+        user: null,
+        error: error,
+      });
+    } finally {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const updateUser = async () => {
+    try {
+      setAuthState(prev => ({ ...prev, isLoading: true }));
+      const { data: { user }, error } = await supabase.auth.getUser();
+
+      if (error) {
+        throw error;
+      }
+
+      setAuthState({
+        isLoading: false,
+        user: user,
+        error: null,
+      });
+    } catch (error: any) {
+      setAuthState({
+        isLoading: false,
+        user: null,
+        error: error,
+      });
+    }
+  };
+
+  const setupSubscription = useCallback(<T extends any>(
+    tableName: string,
     event: 'INSERT' | 'UPDATE' | 'DELETE',
-    callback: (payload: { new: T; old: T | null }) => void
+    callback: (payload: { new: T; old: T }) => void
   ) => {
     const channel = supabase
-      .channel('schema-db-changes')
+      .channel('db-changes')
       .on(
-        'postgres_changes',
+        'postgres_changes' as any,
         {
           event: event,
           schema: 'public',
-          table: table
+          table: tableName,
         },
-        (payload) => {
-          callback(payload as { new: T; old: T | null });
-        }
+        callback
       )
       .subscribe();
 
+    // Return a cleanup function
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-    } catch (error: any) {
-      toast({
-        title: "Login failed",
-        description: error.message || "An error occurred during login",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const signUp = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-      
-      toast({
-        title: "Registration successful",
-        description: "Please check your email for verification instructions",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Registration failed",
-        description: error.message || "An error occurred during registration",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } catch (error: any) {
-      toast({
-        title: "Sign out failed",
-        description: error.message || "An error occurred during sign out",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
-
-  const value = {
-    user,
-    signIn,
-    signUp,
-    signOut,
-    loading,
-    setupSubscription
+  const value: AuthContextProps = {
+    isLoading: authState.isLoading,
+    user: authState.user,
+    error: authState.error,
+    session: session,
+    login,
+    register,
+    logout,
+    updateUser,
+    setupSubscription,
   };
 
   return (
@@ -144,9 +203,5 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return useContext(AuthContext);
 };

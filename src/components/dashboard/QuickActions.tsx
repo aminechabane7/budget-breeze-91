@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { SendIcon, Download, Upload, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { SendIcon, Download, Upload, FileText, FileDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -16,6 +16,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { CategoryType } from '@/components/shared/CategoryIcon';
 
 const QuickActions: React.FC = () => {
   const { toast } = useToast();
@@ -28,6 +36,48 @@ const QuickActions: React.FC = () => {
   } | null>(null);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState<string>('');
+  const [beneficiary, setBeneficiary] = useState('');
+  const [categories, setCategories] = useState<{id: string, name: string, type: string}[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
+
+  // Fetch categories and transactions
+  useEffect(() => {
+    if (user) {
+      const fetchCategories = async () => {
+        const { data, error } = await supabase
+          .from('categories')
+          .select('id, name, type')
+          .order('name');
+          
+        if (error) {
+          console.error('Error fetching categories:', error);
+        } else if (data) {
+          setCategories(data);
+        }
+      };
+
+      const fetchTransactions = async () => {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(10);
+          
+        if (error) {
+          console.error('Error fetching transactions:', error);
+        } else if (data) {
+          setTransactions(data);
+        }
+      };
+      
+      fetchCategories();
+      fetchTransactions();
+    }
+  }, [user]);
 
   const openActionDialog = (action: {
     name: string;
@@ -38,7 +88,13 @@ const QuickActions: React.FC = () => {
     // Pre-fill description based on action name
     setDescription(`${action.name} transaction`);
     setAmount('');
+    setCategory('');
+    setBeneficiary('');
     setShowDialog(true);
+  };
+
+  const openReceiptDialog = () => {
+    setShowReceiptDialog(true);
   };
 
   const handleSubmit = async () => {
@@ -68,18 +124,45 @@ const QuickActions: React.FC = () => {
       });
       return;
     }
+
+    // For send action, validate beneficiary
+    if (currentAction?.name === 'Send' && !beneficiary.trim()) {
+      toast({
+        title: "Beneficiary required",
+        description: "Please enter the beneficiary who will receive the money",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For deposit and send, validate category
+    if ((currentAction?.name === 'Deposit' || currentAction?.name === 'Send') && !category) {
+      toast({
+        title: "Category required",
+        description: "Please select a category for this transaction",
+        variant: "destructive",
+      });
+      return;
+    }
     
     // Create a record of the action in the database
     try {
-      const { error } = await supabase
+      // Add beneficiary to description if it's a send transaction
+      const fullDescription = currentAction?.name === 'Send' 
+        ? `${description} to ${beneficiary}`
+        : description;
+
+      const { data, error } = await supabase
         .from('transactions')
         .insert({
           user_id: user.id,
           type: currentAction?.type || 'expense',
           amount: parseFloat(amount),
-          description: description,
+          description: fullDescription,
+          category_id: category || null,
           date: new Date().toISOString().split('T')[0],
-        });
+        })
+        .select();
 
       if (error) throw error;
 
@@ -88,6 +171,19 @@ const QuickActions: React.FC = () => {
         title: `${currentAction?.name} successful`,
         description: `Your ${currentAction?.name.toLowerCase()} of $${parseFloat(amount).toFixed(2)} has been processed.`,
       });
+
+      // Refresh transactions list
+      const { data: freshTransactions, error: fetchError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+        
+      if (!fetchError && freshTransactions) {
+        setTransactions(freshTransactions);
+      }
+
     } catch (error) {
       console.error(`Error processing ${currentAction?.name}:`, error);
       toast({
@@ -96,6 +192,37 @@ const QuickActions: React.FC = () => {
         variant: "destructive",
       });
     }
+  };
+
+  const generateReceipt = (transaction: any) => {
+    // Create receipt content
+    const receiptContent = `
+RECEIPT
+------------------------------------------
+Transaction ID: ${transaction.id}
+Date: ${new Date(transaction.date).toLocaleDateString()}
+Type: ${transaction.type.toUpperCase()}
+Description: ${transaction.description}
+Amount: $${parseFloat(transaction.amount).toFixed(2)}
+------------------------------------------
+Thank you for using our service!
+    `;
+    
+    // Create a blob and download link
+    const blob = new Blob([receiptContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `receipt-${transaction.id.substring(0, 8)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Receipt downloaded",
+      description: "Your receipt has been downloaded successfully.",
+    });
   };
 
   const actions = [
@@ -137,11 +264,7 @@ const QuickActions: React.FC = () => {
       icon: <FileText className="h-5 w-5" />, 
       color: 'bg-amber-500 hover:bg-amber-600',
       type: 'expense' as const,
-      onClick: () => openActionDialog({ 
-        name: 'Receipt', 
-        type: 'expense', 
-        color: 'bg-amber-500' 
-      })
+      onClick: () => openReceiptDialog()
     }
   ];
 
@@ -170,6 +293,7 @@ const QuickActions: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Transaction Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -197,6 +321,53 @@ const QuickActions: React.FC = () => {
                 />
               </div>
             </div>
+
+            {(currentAction?.name === 'Deposit' || currentAction?.name === 'Send') && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="category" className="text-right">
+                  Category
+                </Label>
+                <div className="col-span-3">
+                  <Select
+                    value={category}
+                    onValueChange={setCategory}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories
+                        .filter(cat => 
+                          (currentAction?.type === 'income' && cat.type === 'income') || 
+                          (currentAction?.type === 'expense' && cat.type === 'expense')
+                        )
+                        .map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            {currentAction?.name === 'Send' && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="beneficiary" className="text-right">
+                  Beneficiary
+                </Label>
+                <Input
+                  id="beneficiary"
+                  value={beneficiary}
+                  onChange={(e) => setBeneficiary(e.target.value)}
+                  className="col-span-3"
+                  placeholder="Enter recipient name"
+                />
+              </div>
+            )}
+
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="description" className="text-right">
                 Description
@@ -216,6 +387,53 @@ const QuickActions: React.FC = () => {
             </Button>
             <Button onClick={handleSubmit}>
               Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Dialog */}
+      <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Download Receipt</DialogTitle>
+            <DialogDescription>
+              Select a transaction to download its receipt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[400px] overflow-y-auto py-2">
+            {transactions.length > 0 ? (
+              <div className="space-y-2">
+                {transactions.map((transaction) => (
+                  <div 
+                    key={transaction.id} 
+                    className="flex justify-between items-center border p-3 rounded-md hover:bg-muted/30 cursor-pointer"
+                    onClick={() => generateReceipt(transaction)}
+                  >
+                    <div>
+                      <p className="font-medium">{transaction.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(transaction.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center">
+                      <span className={`${transaction.type === 'income' ? 'text-green-500' : 'text-red-500'} font-medium mr-2`}>
+                        {transaction.type === 'income' ? '+' : '-'}${parseFloat(transaction.amount).toFixed(2)}
+                      </span>
+                      <FileDown className="h-4 w-4" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p>No transactions found. Create some transactions first.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReceiptDialog(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
