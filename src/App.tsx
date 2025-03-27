@@ -14,6 +14,7 @@ import Transactions from "./pages/Transactions";
 import Categories from "./pages/Categories";
 import Budget from "./pages/Budget";
 import Reports from "./pages/Reports";
+import RevenueStreams from "./pages/RevenueStreams";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,11 @@ const App = () => (
             <Route path="/categories" element={
               <ProtectedRoute>
                 <Categories />
+              </ProtectedRoute>
+            } />
+            <Route path="/revenue-streams" element={
+              <ProtectedRoute>
+                <RevenueStreams />
               </ProtectedRoute>
             } />
             <Route path="/budget" element={

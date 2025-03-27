@@ -172,6 +172,45 @@ export type Database = {
           },
         ]
       }
+      revenue_streams: {
+        Row: {
+          amount: number
+          created_at: string
+          date: string
+          description: string | null
+          id: string
+          name: string
+          recurrence_period: string | null
+          recurring: boolean | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          date: string
+          description?: string | null
+          id?: string
+          name: string
+          recurrence_period?: string | null
+          recurring?: boolean | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          name?: string
+          recurrence_period?: string | null
+          recurring?: boolean | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           amount: number

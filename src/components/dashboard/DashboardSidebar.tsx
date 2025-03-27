@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -12,6 +11,7 @@ import {
   Bell,
   HelpCircle,
   LogOut,
+  BarChart,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -45,7 +45,6 @@ const DashboardSidebar: React.FC = () => {
     email: user?.email || ''
   });
 
-  // Simulated notifications
   const notifications = [
     { id: 1, title: 'New transaction', message: 'You received $250 from ABC Company', isRead: false },
     { id: 2, title: 'Account updated', message: 'Your account details were updated successfully', isRead: true },
@@ -56,7 +55,6 @@ const DashboardSidebar: React.FC = () => {
     if (!user) return;
     
     try {
-      // Update user metadata
       const { error: updateError } = await supabase.auth.updateUser({
         data: {
           firstName: profileData.firstName,
@@ -66,7 +64,6 @@ const DashboardSidebar: React.FC = () => {
       
       if (updateError) throw updateError;
 
-      // Also update the profiles table if it exists
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
@@ -75,7 +72,6 @@ const DashboardSidebar: React.FC = () => {
         })
         .eq('id', user.id);
       
-      // Close dialog
       setIsSettingsOpen(false);
       
       toast({
@@ -94,9 +90,6 @@ const DashboardSidebar: React.FC = () => {
 
   const handleNotificationRead = async (id: number) => {
     try {
-      // Mark notification as read in state (in a real app, this would update the database)
-      // This is just a simulated function since we don't have notifications table
-      
       toast({
         title: "Notification marked as read",
         description: "The notification has been marked as read.",
@@ -113,7 +106,6 @@ const DashboardSidebar: React.FC = () => {
 
   const handleSubmitHelp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate sending a help request
     toast({
       title: "Help request sent",
       description: "Our support team will get back to you soon.",
@@ -134,18 +126,17 @@ const DashboardSidebar: React.FC = () => {
       items: [
         { href: '/transactions', icon: <ArrowDownUp />, label: 'Transactions' },
         { href: '/categories', icon: <PieChart />, label: 'Categories' },
+        { href: '/revenue-streams', icon: <BarChart />, label: 'Revenue Streams' },
         { href: '/budget', icon: <CreditCard />, label: 'Budget' },
         { href: '/reports', icon: <Receipt />, label: 'Reports' },
       ]
     },
   ];
 
-  // Load profile data when the component mounts
   React.useEffect(() => {
     if (user) {
       const loadProfileData = async () => {
         try {
-          // Try to get data from profiles table
           const { data, error } = await supabase
             .from('profiles')
             .select('first_name, last_name')
@@ -161,7 +152,6 @@ const DashboardSidebar: React.FC = () => {
               email: user.email || ''
             });
           } else if (user.user_metadata) {
-            // Fallback to user metadata
             setProfileData({
               firstName: user.user_metadata.firstName || '',
               lastName: user.user_metadata.lastName || '',
@@ -261,7 +251,6 @@ const DashboardSidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Settings Dialog */}
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -313,7 +302,6 @@ const DashboardSidebar: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Notifications Dialog */}
       <Dialog open={isNotificationsOpen} onOpenChange={setIsNotificationsOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -360,7 +348,6 @@ const DashboardSidebar: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Help Dialog */}
       <Dialog open={isHelpOpen} onOpenChange={setIsHelpOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
