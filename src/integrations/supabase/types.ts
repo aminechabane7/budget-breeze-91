@@ -63,6 +63,45 @@ export type Database = {
           },
         ]
       }
+      businesses: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          expenses: number
+          id: string
+          name: string
+          revenue: number
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description?: string | null
+          expenses?: number
+          id?: string
+          name: string
+          revenue?: number
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          expenses?: number
+          id?: string
+          name?: string
+          revenue?: number
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           color: string | null

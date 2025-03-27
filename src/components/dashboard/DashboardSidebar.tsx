@@ -11,7 +11,7 @@ import {
   Bell,
   HelpCircle,
   LogOut,
-  BarChart,
+  Building,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -118,7 +118,7 @@ const DashboardSidebar: React.FC = () => {
       label: 'Overview',
       items: [
         { href: '/dashboard', icon: <Home />, label: 'Dashboard' },
-        { href: '/business', icon: <BarChart3 />, label: 'Business' },
+        { href: '/business', icon: <Building />, label: 'Business' },
       ]
     },
     {
@@ -126,7 +126,6 @@ const DashboardSidebar: React.FC = () => {
       items: [
         { href: '/transactions', icon: <ArrowDownUp />, label: 'Transactions' },
         { href: '/categories', icon: <PieChart />, label: 'Categories' },
-        { href: '/revenue-streams', icon: <BarChart />, label: 'Revenue Streams' },
         { href: '/budget', icon: <CreditCard />, label: 'Budget' },
         { href: '/reports', icon: <Receipt />, label: 'Reports' },
       ]
