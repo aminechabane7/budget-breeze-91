@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { SendIcon, Download, Upload, FileText, FileDown, PlusCircle, BankIcon, QrCode } from 'lucide-react';
+import { SendIcon, Download, Upload, FileText, FileDown, PlusCircle, Building, QrCode } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -47,7 +46,6 @@ const QuickActions: React.FC = () => {
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
 
-  // Fetch categories and transactions
   useEffect(() => {
     if (user) {
       const fetchCategories = async () => {
@@ -83,7 +81,6 @@ const QuickActions: React.FC = () => {
       fetchCategories();
       fetchTransactions();
 
-      // Set up realtime subscription
       const transactionSubscription = supabase
         .channel('transactions-changes')
         .on(
@@ -112,7 +109,6 @@ const QuickActions: React.FC = () => {
     color: string;
   }) => {
     setCurrentAction(action);
-    // Pre-fill description based on action name
     setDescription(`${action.name} transaction`);
     setAmount('');
     setCategory('');
@@ -156,7 +152,6 @@ const QuickActions: React.FC = () => {
       return;
     }
 
-    // For send action, validate beneficiary
     if (currentAction?.name === 'Send' && !beneficiary.trim()) {
       toast({
         title: "Beneficiary required",
@@ -166,7 +161,6 @@ const QuickActions: React.FC = () => {
       return;
     }
 
-    // For deposit and send, validate category
     if ((currentAction?.name === 'Deposit' || currentAction?.name === 'Send') && !category) {
       toast({
         title: "Category required",
@@ -176,9 +170,7 @@ const QuickActions: React.FC = () => {
       return;
     }
     
-    // Create a record of the action in the database
     try {
-      // Add beneficiary to description if it's a send transaction
       const fullDescription = currentAction?.name === 'Send' 
         ? `${description} to ${beneficiary}`
         : description;
@@ -213,7 +205,6 @@ const QuickActions: React.FC = () => {
   };
 
   const generatePDF = (transaction: any) => {
-    // Create receipt content for PDF
     const receiptContent = `
 RECEIPT
 ------------------------------------------
@@ -226,8 +217,6 @@ Amount: $${parseFloat(transaction.amount).toFixed(2)}
 Thank you for using our service!
     `;
     
-    // In a real app, we would generate a PDF here
-    // For now, we'll just create a text file
     const blob = new Blob([receiptContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -315,7 +304,6 @@ Thank you for using our service!
         </CardContent>
       </Card>
 
-      {/* Transaction Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -397,7 +385,7 @@ Thank you for using our service!
               <TabsContent value="bank">
                 <div className="py-6">
                   <div className="text-center space-y-4">
-                    <BankIcon className="mx-auto h-12 w-12 text-primary" />
+                    <Building className="mx-auto h-12 w-12 text-primary" />
                     <h3 className="text-lg font-medium">Connect Your Bank</h3>
                     <p className="text-sm text-muted-foreground">
                       Securely link your bank account to enable quick deposits and transfers.
@@ -497,7 +485,6 @@ Thank you for using our service!
         </DialogContent>
       </Dialog>
 
-      {/* Receive Dialog */}
       <Dialog open={showReceiveDialog} onOpenChange={setShowReceiveDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -608,7 +595,6 @@ Thank you for using our service!
         </DialogContent>
       </Dialog>
 
-      {/* Receipt Dialog */}
       <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
