@@ -25,6 +25,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CategoryType } from '@/components/shared/CategoryIcon';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import jsPDF from 'jspdf';
 
 const QuickActions: React.FC = () => {
   const { toast } = useToast();
@@ -205,31 +206,38 @@ const QuickActions: React.FC = () => {
   };
 
   const generatePDF = (transaction: any) => {
-    const receiptContent = `
-RECEIPT
-------------------------------------------
-Transaction ID: ${transaction.id}
-Date: ${new Date(transaction.date).toLocaleDateString()}
-Type: ${transaction.type.toUpperCase()}
-Description: ${transaction.description}
-Amount: $${parseFloat(transaction.amount).toFixed(2)}
-------------------------------------------
-Thank you for using our service!
-    `;
+    const doc = new jsPDF();
     
-    const blob = new Blob([receiptContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `receipt-${transaction.id.substring(0, 8)}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("RECEIPT", 105, 20, { align: "center" });
+    
+    doc.setLineWidth(0.5);
+    doc.line(20, 25, 190, 25);
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    
+    const startY = 35;
+    const lineHeight = 10;
+    
+    doc.text(`Transaction ID: ${transaction.id.substring(0, 8)}...`, 20, startY);
+    doc.text(`Date: ${new Date(transaction.date).toLocaleDateString()}`, 20, startY + lineHeight);
+    doc.text(`Type: ${transaction.type.toUpperCase()}`, 20, startY + lineHeight * 2);
+    doc.text(`Description: ${transaction.description}`, 20, startY + lineHeight * 3);
+    doc.text(`Amount: $${parseFloat(transaction.amount).toFixed(2)}`, 20, startY + lineHeight * 4);
+    
+    doc.setLineWidth(0.5);
+    doc.line(20, startY + lineHeight * 5, 190, startY + lineHeight * 5);
+    
+    doc.setFontSize(10);
+    doc.text("Thank you for using our service!", 105, startY + lineHeight * 6, { align: "center" });
+    
+    doc.save(`receipt-${transaction.id.substring(0, 8)}.pdf`);
 
     toast({
       title: "Receipt downloaded",
-      description: "Your receipt has been downloaded successfully.",
+      description: "Your receipt has been downloaded as a PDF.",
     });
   };
 
