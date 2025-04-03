@@ -14,7 +14,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface BusinessOverviewProps {
   business: Business;
@@ -28,6 +30,7 @@ const BusinessOverview: React.FC<BusinessOverviewProps> = ({
   onDelete
 }) => {
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
+  const isMobile = useIsMobile();
   const profit = Number(business.revenue) - Number(business.expenses);
   const profitMargin = business.revenue > 0 ? (profit / Number(business.revenue) * 100) : 0;
   

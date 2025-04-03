@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -25,16 +26,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const DashboardSidebar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -166,6 +169,67 @@ const DashboardSidebar: React.FC = () => {
     }
   }, [user]);
 
+  // For mobile, render differently
+  if (isMobile) {
+    return (
+      <div className="py-4">
+        <ul className="space-y-1">
+          {menuItems.map((group, idx) => (
+            <div key={idx} className="mb-6">
+              <h2 className="text-xs uppercase font-semibold text-muted-foreground mb-2 px-1">
+                {group.label}
+              </h2>
+              <ul>
+                {group.items.map((item, itemIdx) => (
+                  <li key={itemIdx}>
+                    <Link
+                      to={item.href}
+                      className={`flex items-center gap-3 px-1 py-2 rounded-md text-sm transition-colors ${
+                        location.pathname === item.href 
+                          ? 'text-primary font-medium' 
+                          : 'hover:text-primary'
+                      }`}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </ul>
+        
+        <div className="mt-6 pt-4 border-t">
+          <div className="flex items-center gap-3 p-1">
+            <Avatar className="h-8 w-8">
+              <AvatarImage src="" alt="User" />
+              <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                {user?.email?.charAt(0).toUpperCase() || 'U'}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">
+                {profileData.firstName 
+                  ? `${profileData.firstName} ${profileData.lastName}` 
+                  : user?.email || 'User'}
+              </p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8"
+              onClick={() => signOut && signOut()}
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop sidebar
   return (
     <aside className="hidden md:block border-r border-border h-screen fixed left-0 top-0 w-60 bg-background z-10">
       <div className="flex flex-col h-full">

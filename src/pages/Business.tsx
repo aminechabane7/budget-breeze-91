@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthProvider';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export interface Business {
   id: string;
@@ -30,6 +31,7 @@ const Business = () => {
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
 
   // Fetch businesses data
   useEffect(() => {
@@ -201,7 +203,7 @@ const Business = () => {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7">
+        <div className={isMobile ? "col-span-1" : "lg:col-span-7"}>
           <BusinessList 
             businesses={businesses} 
             isLoading={isLoading}
@@ -210,27 +212,29 @@ const Business = () => {
           />
         </div>
         
-        <div className="lg:col-span-5">
-          {selectedBusiness ? (
-            <BusinessOverview 
-              business={selectedBusiness}
-              onEdit={() => setIsEditing(true)}
-              onDelete={() => handleDeleteBusiness(selectedBusiness.id)}
-            />
-          ) : (
-            <div className="border rounded-lg p-6 h-full flex items-center justify-center bg-card text-card-foreground">
-              <div className="text-center">
-                <h3 className="text-lg font-medium mb-2">No Business Selected</h3>
-                <p className="text-muted-foreground mb-4">
-                  Select a business from the list to view details or add a new business.
-                </p>
-                <Button onClick={() => setShowAddDialog(true)}>
-                  <Plus className="mr-2 h-4 w-4" /> Add Business
-                </Button>
+        {(!isMobile || (isMobile && selectedBusiness)) && (
+          <div className={isMobile ? "col-span-1 mt-6" : "lg:col-span-5"}>
+            {selectedBusiness ? (
+              <BusinessOverview 
+                business={selectedBusiness}
+                onEdit={() => setIsEditing(true)}
+                onDelete={() => handleDeleteBusiness(selectedBusiness.id)}
+              />
+            ) : (
+              <div className="border rounded-lg p-6 h-full flex items-center justify-center bg-card text-card-foreground">
+                <div className="text-center">
+                  <h3 className="text-lg font-medium mb-2">No Business Selected</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Select a business from the list to view details or add a new business.
+                  </p>
+                  <Button onClick={() => setShowAddDialog(true)}>
+                    <Plus className="mr-2 h-4 w-4" /> Add Business
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
       
       <AddBusinessDialog 
@@ -239,13 +243,15 @@ const Business = () => {
         onSubmit={handleAddBusiness}
       />
       
-      <AddBusinessDialog 
-        isOpen={isEditing} 
-        onClose={() => setIsEditing(false)}
-        onSubmit={(data) => handleUpdateBusiness({ ...data, id: selectedBusiness!.id })}
-        business={selectedBusiness || undefined}
-        isEditing={true}
-      />
+      {selectedBusiness && (
+        <AddBusinessDialog 
+          isOpen={isEditing} 
+          onClose={() => setIsEditing(false)}
+          onSubmit={(data) => handleUpdateBusiness({ ...data, id: selectedBusiness.id })}
+          business={selectedBusiness}
+          isEditing={true}
+        />
+      )}
     </DashboardLayout>
   );
 };
