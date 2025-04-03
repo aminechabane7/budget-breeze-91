@@ -62,7 +62,7 @@ const Business = () => {
     fetchBusinesses();
     
     // Set up real-time subscription
-    const businessSubscription = supabase
+    const channel = supabase
       .channel('businesses-changes')
       .on(
         'postgres_changes',
@@ -73,14 +73,49 @@ const Business = () => {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          // Refresh businesses when changes occur
-          fetchBusinesses();
+          console.log('Received real-time update:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            const newBusiness = payload.new as Business;
+            setBusinesses(prev => [newBusiness, ...prev]);
+            
+            toast({
+              title: "Business added",
+              description: "Your business has been added successfully.",
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedBusiness = payload.new as Business;
+            setBusinesses(prev => 
+              prev.map(business => business.id === updatedBusiness.id ? updatedBusiness : business)
+            );
+            
+            if (selectedBusiness?.id === updatedBusiness.id) {
+              setSelectedBusiness(updatedBusiness);
+            }
+            
+            toast({
+              title: "Business updated",
+              description: "Your business has been updated successfully.",
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const deletedBusinessId = payload.old.id;
+            setBusinesses(prev => prev.filter(business => business.id !== deletedBusinessId));
+            
+            if (selectedBusiness?.id === deletedBusinessId) {
+              setSelectedBusiness(null);
+            }
+            
+            toast({
+              title: "Business deleted",
+              description: "Your business has been deleted successfully.",
+            });
+          }
         }
       )
       .subscribe();
       
     return () => {
-      supabase.removeChannel(businessSubscription);
+      supabase.removeChannel(channel);
     };
   }, [user, toast]);
 
@@ -97,11 +132,7 @@ const Business = () => {
         
       if (error) throw error;
       
-      toast({
-        title: "Business added",
-        description: "Your business has been added successfully.",
-      });
-      
+      // Toast notification will come from the realtime subscription
       setShowAddDialog(false);
     } catch (error) {
       console.error('Error adding business:', error);
@@ -122,11 +153,7 @@ const Business = () => {
         
       if (error) throw error;
       
-      toast({
-        title: "Business updated",
-        description: "Your business has been updated successfully.",
-      });
-      
+      // Toast notification will come from the realtime subscription
       setIsEditing(false);
     } catch (error) {
       console.error('Error updating business:', error);
@@ -147,12 +174,7 @@ const Business = () => {
         
       if (error) throw error;
       
-      toast({
-        title: "Business deleted",
-        description: "Your business has been deleted successfully.",
-      });
-      
-      setSelectedBusiness(null);
+      // Toast notification will come from the realtime subscription
     } catch (error) {
       console.error('Error deleting business:', error);
       toast({
