@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Business } from '@/pages/Business';
 
 const businessSchema = z.object({
@@ -50,14 +51,7 @@ const AddBusinessDialog: React.FC<AddBusinessDialogProps> = ({
 }) => {
   const form = useForm<BusinessFormValues>({
     resolver: zodResolver(businessSchema),
-    defaultValues: business ? {
-      name: business.name,
-      category: business.category,
-      revenue: Number(business.revenue),
-      expenses: Number(business.expenses),
-      description: business.description || '',
-      status: business.status,
-    } : {
+    defaultValues: {
       name: '',
       category: '',
       revenue: 0,
@@ -67,11 +61,33 @@ const AddBusinessDialog: React.FC<AddBusinessDialogProps> = ({
     },
   });
 
+  // Reset form with business values when editing or when form opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      if (isEditing && business) {
+        form.reset({
+          name: business.name,
+          category: business.category,
+          revenue: Number(business.revenue),
+          expenses: Number(business.expenses),
+          description: business.description || '',
+          status: business.status,
+        });
+      } else if (!isEditing) {
+        form.reset({
+          name: '',
+          category: '',
+          revenue: 0,
+          expenses: 0,
+          description: '',
+          status: 'active',
+        });
+      }
+    }
+  }, [isOpen, isEditing, business, form]);
+
   const handleSubmit = (data: BusinessFormValues) => {
     onSubmit(data);
-    if (!isEditing) {
-      form.reset();
-    }
   };
 
   return (
@@ -148,7 +164,7 @@ const AddBusinessDialog: React.FC<AddBusinessDialogProps> = ({
                 <FormItem>
                   <FormLabel>Description (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="Brief description of your business" {...field} />
+                    <Textarea placeholder="Brief description of your business" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
